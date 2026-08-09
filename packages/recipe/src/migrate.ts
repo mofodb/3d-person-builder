@@ -50,8 +50,15 @@ const migrateV1ToV2: Migration = (recipe) => {
   };
 };
 
+/**
+ * v2 -> v3: added `body.ancestry`. The field is defaulted, so the schema fills
+ * in an even blend on its own and there is nothing to compute here.
+ */
+const migrateV2ToV3: Migration = (recipe) => ({ ...recipe, schemaVersion: 3 });
+
 const MIGRATIONS: Record<number, Migration> = {
   1: migrateV1ToV2,
+  2: migrateV2ToV3,
 };
 
 export class RecipeMigrationError extends Error {}

@@ -43,6 +43,24 @@ const hexColor = () =>
 const assetId = () =>
   z.string().regex(/^[a-z0-9]+(\.[a-z0-9_]+)+$/, "must look like 'category.asset_name'");
 
+/**
+ * Facial structure blend, following MakeHuman's model directly.
+ *
+ * Weights are stored raw and normalized to sum to 1 at the point of use (see
+ * `normalizeAncestry`). The schema deliberately does not enforce the sum:
+ * requiring it would make UI sliders fight each other, and 1/3 + 1/3 + 1/3
+ * does not equal 1 in floating point anyway.
+ *
+ * Note that for photo-derived characters the identity morphs in `face` capture
+ * individual facial structure far more strongly than this blend does; within
+ * any group, individual variation dominates.
+ */
+export const AncestrySchema = z.object({
+  african: unit().default(1 / 3),
+  asian: unit().default(1 / 3),
+  caucasian: unit().default(1 / 3),
+});
+
 export const BodyProportionsSchema = z.object({
   shoulderWidth: bipolar().default(0),
   chestSize: bipolar().default(0),
@@ -77,8 +95,23 @@ export const BodySchema = z.object({
    * not a measurement.
    */
   muscularity: unit().default(0.35),
+  ancestry: AncestrySchema.prefault({}),
   proportions: BodyProportionsSchema.prefault({}),
 });
+
+/**
+ * Scales ancestry weights so they sum to 1, which is what the mesh blend
+ * requires. Falls back to an even split if the weights are all zero.
+ */
+export function normalizeAncestry(ancestry: Ancestry): Ancestry {
+  const total = ancestry.african + ancestry.asian + ancestry.caucasian;
+  if (total <= 0) return { african: 1 / 3, asian: 1 / 3, caucasian: 1 / 3 };
+  return {
+    african: ancestry.african / total,
+    asian: ancestry.asian / total,
+    caucasian: ancestry.caucasian / total,
+  };
+}
 
 /**
  * Manual face controls, layered ON TOP of any photo-derived identity.
@@ -163,7 +196,7 @@ export const OutfitSchema = z.object(
   ) as Record<(typeof OUTFIT_SLOTS)[number], z.ZodDefault<z.ZodNullable<typeof OutfitSlotSchema>>>,
 );
 
-export const CHARACTER_RECIPE_VERSION = 2;
+export const CHARACTER_RECIPE_VERSION = 3;
 
 export const CharacterRecipeSchema = z.object({
   schemaVersion: z.literal(CHARACTER_RECIPE_VERSION),
@@ -178,6 +211,7 @@ export const CharacterRecipeSchema = z.object({
   outfit: OutfitSchema.prefault({}),
 });
 
+export type Ancestry = z.infer<typeof AncestrySchema>;
 export type BodyParams = z.infer<typeof BodySchema>;
 export type FaceParams = z.infer<typeof FaceSchema>;
 export type FaceOverrides = z.infer<typeof FaceOverridesSchema>;
