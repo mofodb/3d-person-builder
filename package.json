@@ -1,0 +1,22 @@
+{
+  "name": "3d-person-builder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Parametric 3D character builder for browser games, with photo-guided face shaping",
+  "license": "MIT",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @tpb/editor dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "asset:basemesh": "blender --background --python pipeline/blender/build_basemesh.py",
+    "asset:optimize": "node pipeline/optimize/optimize.mjs"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

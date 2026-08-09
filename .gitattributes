@@ -1,0 +1,15 @@
+# Normalize text to LF in the repository, checked out native on Windows.
+* text=auto
+
+# Always LF - these are read by tools that dislike CRLF
+*.sh text eol=lf
+*.py text eol=lf
+
+# Binary assets
+*.blend binary
+*.glb binary
+*.gltf binary
+*.ktx2 binary
+*.png binary
+*.jpg binary
+*.exr binary

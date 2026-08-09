@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Generated 3D assets - rebuilt from pipeline/, never committed
+assets/dist/
+*.glb
+*.gltf
+*.ktx2
+*.blend1
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ML model weights - large, license-restricted, downloaded by setup scripts
+services/face/weights/
+services/face/models/
+
+# Uploaded photos - never commit biometric data
+services/face/uploads/
+**/uploads/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
