@@ -175,14 +175,53 @@ test("fatter characters get more fat morph", () => {
   assert.ok(fat.weights["weight_heavy"]! > lean.weights["weight_heavy"]!);
 });
 
-test("extra weight at constant body fat becomes muscle, not fat", () => {
-  // Fat morph tracks body fat percentage alone, so adding mass while holding
-  // composition fixed must show up as muscle instead.
+test("extra weight at constant body fat mostly becomes muscle", () => {
   const light = solveMorphWeights(withBody({ massKg: 65, bodyFatPercent: 15 }), manifest);
   const heavy = solveMorphWeights(withBody({ massKg: 95, bodyFatPercent: 15 }), manifest);
 
-  assert.equal(heavy.weights["weight_heavy"], light.weights["weight_heavy"]);
+  // A heavier character at the same composition is less thin and more muscular.
+  assert.ok(heavy.weights["weight_light"]! < light.weights["weight_light"]!);
   assert.ok(heavy.weights["muscle_high"]! > light.weights["muscle_high"]!);
+  // Muscle should gain far more than the barely-above-average starting point.
+  assert.ok(light.weights["muscle_high"]! < 0.15, `${light.weights["muscle_high"]}`);
+  assert.ok(
+    heavy.weights["muscle_high"]! - light.weights["muscle_high"]! > 0.4,
+    "the gain should be substantial, not marginal",
+  );
+});
+
+test("the three body archetypes produce clearly separated morphs", () => {
+  // Guards the contrast between skinny, fat and muscular, which was previously
+  // far too subtle to see.
+  const tall = feetInchesToCm(6, 2);
+  const skinny = solveMorphWeights(
+    withBody({ heightCm: tall, massKg: poundsToKg(150), bodyFatPercent: 12, gender: 1 }),
+    manifest,
+  );
+  const fat = solveMorphWeights(
+    withBody({ heightCm: tall, massKg: poundsToKg(240), bodyFatPercent: 35, gender: 1 }),
+    manifest,
+  );
+  const jacked = solveMorphWeights(
+    withBody({ heightCm: tall, massKg: poundsToKg(240), bodyFatPercent: 12, gender: 1 }),
+    manifest,
+  );
+
+  // Skinny: thin and unmuscled.
+  assert.ok(skinny.weights["weight_light"]! > 0.6, `${skinny.weights["weight_light"]}`);
+  assert.ok(skinny.weights["muscle_low"]! > 0.5, `${skinny.weights["muscle_low"]}`);
+
+  // Fat: heavy, with only modest muscle.
+  assert.ok(fat.weights["weight_heavy"]! > 0.5, `${fat.weights["weight_heavy"]}`);
+  assert.ok(fat.weights["muscle_high"]! < 0.3, `${fat.weights["muscle_high"]}`);
+
+  // Muscular: strongly muscled without reading as heavy.
+  assert.ok(jacked.weights["muscle_high"]! > 0.8, `${jacked.weights["muscle_high"]}`);
+  assert.equal(jacked.weights["weight_heavy"], 0);
+
+  // Same weight, opposite silhouettes.
+  assert.ok(fat.weights["weight_heavy"]! - jacked.weights["weight_heavy"]! > 0.5);
+  assert.ok(jacked.weights["muscle_high"]! - fat.weights["muscle_high"]! > 0.5);
 });
 
 test("a lean muscular 6'2\" 202 lb build reaches a high muscle morph", () => {

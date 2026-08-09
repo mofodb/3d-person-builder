@@ -50,30 +50,75 @@ def ancestry(african: float, asian: float, caucasian: float) -> dict:
 
 # Each entry becomes one shape key on the exported mesh. Names are the contract
 # with the TypeScript runtime and must not change without a manifest bump.
-# Each entry is (shape key name, macro axis, value at full influence, macro overrides).
-# The macro axis and value are exported in the manifest so the runtime can invert
-# them; note that `age_young` is extracted at 0.25 rather than 0, because the
-# schema's minimum age is 13 and a dial of 0 is an infant.
+# MPFB's weight and muscle macros are deliberately subtle: at full extreme they
+# displace vertices only ~2 cm, which reads as almost no change. MakeHuman's
+# DETAIL targets carry the real range -- `stomach-pregnant-incr` alone moves
+# vertices 9.3 cm. The fat and muscle morphs are therefore composites: the macro
+# extreme plus a stack of anatomically authored detail targets.
+#
+# Both sides of the body are listed explicitly; a missing target is a hard error
+# rather than a silent no-op, because that failure mode already cost us once.
+_LIMBS = ["upperarm", "lowerarm", "upperleg", "lowerleg"]
+
+
+def _sided(pattern: str) -> list:
+    return [f"{side}-{pattern}" for side in ("l", "r")]
+
+
+def fat_details(direction: str) -> list:
+    """Targets that add or remove fat bulk. `direction` is "incr" or "decr"."""
+    targets = [
+        f"stomach-pregnant-{direction}",
+        f"measure-waist-circ-{direction}",
+        f"measure-hips-circ-{direction}",
+        f"torso-scale-depth-{direction}",
+        f"buttocks-volume-{direction}",
+        f"measure-upperarm-circ-{direction}",
+    ]
+    for limb in _LIMBS:
+        targets += _sided(f"{limb}-fat-{direction}")
+    return targets
+
+
+def muscle_details(direction: str) -> list:
+    """Targets that add or remove muscle mass."""
+    targets = [
+        f"torso-muscle-dorsi-{direction}",
+        f"torso-muscle-pectoral-{direction}",
+        f"torso-vshape-{direction}",
+        f"stomach-tone-{direction}",
+        f"measure-shoulder-dist-{direction}",
+    ]
+    for limb in _LIMBS:
+        targets += _sided(f"{limb}-muscle-{direction}")
+    targets += _sided(f"upperarm-shoulder-muscle-{direction}")
+    return targets
+
+
+# Each entry is (shape key name, macro axis, value at full influence,
+# macro overrides, detail targets applied at full strength).
+# `age_young` is extracted at 0.25 rather than 0 because the schema's minimum age
+# is 13 and a dial of 0 is an infant.
 MORPH_BASIS = [
-    ("gender_feminine", "gender", 0.0, {"gender": 0.0}),
-    ("gender_masculine", "gender", 1.0, {"gender": 1.0}),
-    ("age_young", "age", AGE_DIAL_AT_13, {"age": AGE_DIAL_AT_13}),
-    ("age_old", "age", 1.0, {"age": 1.0}),
-    ("height_short", "height", 0.0, {"height": 0.0}),
-    ("height_tall", "height", 1.0, {"height": 1.0}),
-    ("weight_light", "weight", 0.0, {"weight": 0.0}),
-    ("weight_heavy", "weight", 1.0, {"weight": 1.0}),
-    ("muscle_low", "muscle", 0.0, {"muscle": 0.0}),
-    ("muscle_high", "muscle", 1.0, {"muscle": 1.0}),
-    ("proportions_uncommon", "proportions", 0.0, {"proportions": 0.0}),
-    ("proportions_ideal", "proportions", 1.0, {"proportions": 1.0}),
-    ("cupsize_small", "cupsize", 0.0, {"cupsize": 0.0}),
-    ("cupsize_large", "cupsize", 1.0, {"cupsize": 1.0}),
-    ("firmness_soft", "firmness", 0.0, {"firmness": 0.0}),
-    ("firmness_firm", "firmness", 1.0, {"firmness": 1.0}),
-    ("ancestry_african", "race.african", 1.0, {"race": ancestry(1.0, 0.0, 0.0)}),
-    ("ancestry_asian", "race.asian", 1.0, {"race": ancestry(0.0, 1.0, 0.0)}),
-    ("ancestry_caucasian", "race.caucasian", 1.0, {"race": ancestry(0.0, 0.0, 1.0)}),
+    ("gender_feminine", "gender", 0.0, {"gender": 0.0}, []),
+    ("gender_masculine", "gender", 1.0, {"gender": 1.0}, []),
+    ("age_young", "age", AGE_DIAL_AT_13, {"age": AGE_DIAL_AT_13}, []),
+    ("age_old", "age", 1.0, {"age": 1.0}, []),
+    ("height_short", "height", 0.0, {"height": 0.0}, []),
+    ("height_tall", "height", 1.0, {"height": 1.0}, []),
+    ("weight_light", "weight", 0.0, {"weight": 0.0}, fat_details("decr")),
+    ("weight_heavy", "weight", 1.0, {"weight": 1.0}, fat_details("incr")),
+    ("muscle_low", "muscle", 0.0, {"muscle": 0.0}, muscle_details("decr")),
+    ("muscle_high", "muscle", 1.0, {"muscle": 1.0}, muscle_details("incr")),
+    ("proportions_uncommon", "proportions", 0.0, {"proportions": 0.0}, []),
+    ("proportions_ideal", "proportions", 1.0, {"proportions": 1.0}, []),
+    ("cupsize_small", "cupsize", 0.0, {"cupsize": 0.0}, []),
+    ("cupsize_large", "cupsize", 1.0, {"cupsize": 1.0}, []),
+    ("firmness_soft", "firmness", 0.0, {"firmness": 0.0}, []),
+    ("firmness_firm", "firmness", 1.0, {"firmness": 1.0}, []),
+    ("ancestry_african", "race.african", 1.0, {"race": ancestry(1.0, 0.0, 0.0)}, []),
+    ("ancestry_asian", "race.asian", 1.0, {"race": ancestry(0.0, 1.0, 0.0)}, []),
+    ("ancestry_caucasian", "race.caucasian", 1.0, {"race": ancestry(0.0, 0.0, 1.0)}, []),
 ]
 
 # Neutral value of each macro axis, i.e. the shape the Basis key represents.
@@ -136,16 +181,39 @@ def evaluated_coords(obj) -> list:
     return coords
 
 
-def build_variant(macros: dict):
-    """Creates a throwaway human with the given macro settings."""
+def apply_detail_targets(obj, targets: list) -> None:
+    """Loads MakeHuman detail targets onto a mesh at full strength.
+
+    `TargetService.set_target_value` only adjusts an ALREADY loaded shape key and
+    silently does nothing otherwise, which made an earlier version of this script
+    apply fourteen targets to no effect whatsoever. `load_target` is the call that
+    actually loads and weights a target, and a missing file is raised rather than
+    skipped so that a typo can never again pass unnoticed.
+    """
+    TargetService = import_mpfb("services.targetservice").TargetService
+
+    for name in targets:
+        path = TargetService.target_full_path(name)
+        if not path or not os.path.exists(path):
+            raise RuntimeError(f"Detail target not found: {name}")
+        TargetService.load_target(obj, path, weight=1.0, name=name)
+        if not TargetService.has_target(obj, name):
+            raise RuntimeError(f"Detail target failed to load: {name}")
+
+
+def build_variant(macros: dict, detail_targets: list = ()):
+    """Creates a throwaway human with the given macro settings and details."""
     HumanService = import_mpfb("services.humanservice").HumanService
-    return HumanService.create_human(
+    obj = HumanService.create_human(
         mask_helpers=False,
         detailed_helpers=True,
         feet_on_ground=True,
         scale=0.1,
         macro_detail_dict=macros,
     )
+    if detail_targets:
+        apply_detail_targets(obj, list(detail_targets))
+    return obj
 
 
 def delete_object(obj) -> None:
@@ -155,8 +223,8 @@ def delete_object(obj) -> None:
         bpy.data.meshes.remove(mesh)
 
 
-def capture_variant(macros: dict) -> list:
-    obj = build_variant(macros)
+def capture_variant(macros: dict, detail_targets: list = ()) -> list:
+    obj = build_variant(macros, detail_targets)
     coords = evaluated_coords(obj)
     delete_object(obj)
     return coords
@@ -291,6 +359,40 @@ def triangle_count(mesh) -> int:
     return sum(len(p.vertices) - 2 for p in mesh.polygons)
 
 
+def validate_shape_keys(obj, extracted: list) -> None:
+    """Confirm every authored morph still holds data immediately before export.
+
+    Morph deltas have been silently lost between authoring and export before, so
+    this measures the shape keys as they will be written and fails the build
+    rather than shipping a mesh whose sliders do nothing.
+    """
+    blocks = obj.data.shape_keys.key_blocks
+    basis = blocks[0]
+    empty = []
+
+    for info in extracted:
+        name = info["name"]
+        key = blocks.get(name)
+        if key is None:
+            empty.append(f"{name} (missing)")
+            continue
+        worst = 0.0
+        for i in range(len(key.data)):
+            a, b = key.data[i].co, basis.data[i].co
+            worst = max(worst, max(abs(a[k] - b[k]) for k in range(3)))
+        worst_cm = worst * 100
+        info["exported_delta_cm"] = round(worst_cm, 3)
+        print(f"VALIDATE {name}: {worst_cm:.2f} cm")
+        if worst_cm < 0.01:
+            empty.append(name)
+
+    if empty:
+        raise RuntimeError(
+            "These morphs carry no deformation and would be dead sliders: "
+            + ", ".join(empty)
+        )
+
+
 def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     HumanService = import_mpfb("services.humanservice").HumanService
@@ -315,12 +417,12 @@ def main():
     neutral_height_cm = measure_height_cm(neutral, body_indices)
 
     extracted = []
-    for name, macro_axis, macro_value, overrides in MORPH_BASIS:
+    for name, macro_axis, macro_value, overrides, detail_targets in MORPH_BASIS:
         macros = neutral_macros()
         for key, value in overrides.items():
             macros[key] = value
 
-        coords = capture_variant(macros)
+        coords = capture_variant(macros, detail_targets)
         if len(coords) != vertex_count:
             raise RuntimeError(
                 f"{name}: topology changed ({len(coords)} vs {vertex_count} verts); "
@@ -348,11 +450,12 @@ def main():
                 "neutral": MACRO_NEUTRALS[macro_axis],
                 "max_delta_cm": round(max_delta * 100, 3),
                 "height_delta_cm": round(height_delta, 3),
+                "detail_targets": len(detail_targets),
             }
         )
         print(
             f"BUILD morph {name}: max delta {max_delta * 100:.2f} cm, "
-            f"height {height_delta:+.2f} cm"
+            f"height {height_delta:+.2f} cm, details {len(detail_targets)}"
         )
 
     print("BUILD verifying blend linearity")
@@ -374,6 +477,8 @@ def main():
     print("BUILD bones:", bone_count)
 
     helper_stats = strip_helpers(base)
+
+    validate_shape_keys(base, extracted)
 
     mesh = base.data
     stats = {

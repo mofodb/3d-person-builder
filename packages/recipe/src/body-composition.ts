@@ -19,8 +19,17 @@
  * substitution stays contained.
  */
 
-import { bmi, clamp, clamp01, denormalize, isWithin, normalize } from "./ranges.ts";
-import type { Range } from "./ranges.ts";
+import {
+  bmi,
+  clamp,
+  clamp01,
+  denormalizeAroundNeutral,
+  isWithin,
+  lerpAnchors,
+  normalize,
+  normalizeAroundNeutral,
+} from "./ranges.ts";
+import type { Anchors, Range } from "./ranges.ts";
 
 /** Body fat percentages outside this band are not survivable; clamp to it. */
 export const PHYSIOLOGICAL_BF_PERCENT: Range = { min: 3, max: 60, unit: "%" };
@@ -125,41 +134,60 @@ export function plausibleMassRangeKg(heightCm: number): Range {
   };
 }
 
-// --- Muscularity from FFMI ----------------------------------------------------
+// --- Composition indices ------------------------------------------------------
 
 /**
  * Fat-Free Mass Index: lean mass divided by height squared. Unlike BMI it is
  * blind to fat, which makes it the honest measure of how muscular someone is.
  *
- * Reference points for men: ~16 untrained, ~19 average, ~21 athletic,
- * ~23 very muscular, ~25 the rough ceiling for a natural athlete. Women run
- * roughly three points lower, so the range is interpolated across `gender`.
+ * Reference points for men: ~16 untrained, ~19.5 average, ~23 very muscular,
+ * ~25 the rough ceiling for a natural athlete. Women run roughly three points
+ * lower, so the anchors are interpolated across `gender`.
  */
-export const FFMI_FEMININE: Range = { min: 13, max: 21, unit: "kg/m^2" };
-export const FFMI_MASCULINE: Range = { min: 16, max: 25, unit: "kg/m^2" };
+export const FFMI_FEMININE: Anchors = { min: 13, neutral: 16, max: 21, unit: "kg/m^2" };
+export const FFMI_MASCULINE: Anchors = { min: 16, neutral: 19.5, max: 25, unit: "kg/m^2" };
+
+/**
+ * Fat Mass Index: fat mass divided by height squared. This, not body fat
+ * percentage, is what determines how much fat *bulk* is visible -- percentage is
+ * relative to total mass, so a heavy muscular character and a light soft one can
+ * share a percentage while looking nothing alike.
+ *
+ * Reference points for men: ~1.5 shredded, ~5 average, ~13 obese. Women
+ * naturally carry more, so the anchors shift up.
+ */
+export const FMI_FEMININE: Anchors = { min: 3, neutral: 8, max: 18, unit: "kg/m^2" };
+export const FMI_MASCULINE: Anchors = { min: 1.5, neutral: 5, max: 13, unit: "kg/m^2" };
 
 /** Beyond this band, the implied lean mass is not a real human body. */
 export const PLAUSIBLE_FFMI: Range = { min: 11, max: 30, unit: "kg/m^2" };
 
-export function ffmiRange(gender: number): Range {
-  const t = clamp01(gender);
-  return {
-    min: FFMI_FEMININE.min + (FFMI_MASCULINE.min - FFMI_FEMININE.min) * t,
-    max: FFMI_FEMININE.max + (FFMI_MASCULINE.max - FFMI_FEMININE.max) * t,
-    unit: "kg/m^2",
-  };
-}
+export const ffmiAnchors = (gender: number): Anchors =>
+  lerpAnchors(FFMI_FEMININE, FFMI_MASCULINE, gender);
+
+export const fmiAnchors = (gender: number): Anchors =>
+  lerpAnchors(FMI_FEMININE, FMI_MASCULINE, gender);
 
 export const ffmi = (heightCm: number, leanMassKg: number): number =>
   leanMassKg / (heightCm / 100) ** 2;
 
-/** Normalized 0..1 muscularity from an FFMI value. */
+export const fmi = (heightCm: number, fatMassKg: number): number =>
+  fatMassKg / (heightCm / 100) ** 2;
+
+/**
+ * Normalized 0..1 muscularity from an FFMI value, with an average build landing
+ * on 0.5 so that it lines up with MPFB's macro neutral.
+ */
 export const ffmiToMuscularity = (value: number, gender: number): number =>
-  normalize(ffmiRange(gender), value);
+  normalizeAroundNeutral(ffmiAnchors(gender), value);
 
 /** FFMI implied by a normalized muscularity dial. */
 export const muscularityToFfmi = (muscularity: number, gender: number): number =>
-  denormalize(ffmiRange(gender), muscularity);
+  denormalizeAroundNeutral(ffmiAnchors(gender), muscularity);
+
+/** Normalized 0..1 fat bulk from an FMI value, average landing on 0.5. */
+export const fmiToFatness = (value: number, gender: number): number =>
+  normalizeAroundNeutral(fmiAnchors(gender), value);
 
 /**
  * Body fat percentage that would produce a given muscularity, holding height and
@@ -195,12 +223,29 @@ export interface DerivedBodyShape {
   readonly fatMassKg: number;
   readonly leanMassKg: number;
   readonly ffmi: number;
+  readonly fmi: number;
   /** 0..1 muscularity implied by the lean mass. Derived, never stored. */
   readonly muscularity: number;
-  /** 0..1 weight for the body fat morph target. */
+  /**
+   * Target for MPFB's `weight` macro: how much fat bulk is on the body.
+   * 0.5 is an average build. Driven by fat mass index rather than body fat
+   * percentage, because percentage is relative to total mass and so says
+   * nothing on its own about how much fat is actually there.
+   */
   readonly fatMorphWeight: number;
-  /** 0..1 weight for the muscle definition morph target. */
+  /**
+   * Target for MPFB's `muscle` macro: how much muscle is on the body.
+   * 0.5 is an average build. Deliberately NOT reduced by body fat -- a heavy
+   * strong person still has large muscles, and it was suppression here that
+   * previously made muscular characters look unremarkable.
+   */
   readonly muscleMorphWeight: number;
+  /**
+   * How visible muscle separation should be, which fat genuinely does hide.
+   * This belongs to shading and detail normals, not to silhouette, so nothing
+   * in the shape path consumes it yet.
+   */
+  readonly definition: number;
   /** False when this combination is not a real body. Shape is still built. */
   readonly plausible: boolean;
   /** Human-readable reasons, for the UI to surface. */
@@ -231,8 +276,9 @@ export function deriveBodyShape(composition: BodyComposition): DerivedBodyShape 
   const leanMassKg = massKg - fatMassKg;
   const bodyMassIndex = bmi(heightCm, massKg);
   const fatFreeIndex = ffmi(heightCm, leanMassKg);
+  const fatIndex = fmi(heightCm, fatMassKg);
   const muscularity = ffmiToMuscularity(fatFreeIndex, gender);
-  const fatNormalized = normalize(VISUAL_BF_PERCENT, bodyFatPercent);
+  const fatness = fmiToFatness(fatIndex, gender);
 
   const warnings: string[] = [];
   if (!isWithin(PLAUSIBLE_BMI, bodyMassIndex)) {
@@ -245,7 +291,7 @@ export function deriveBodyShape(composition: BodyComposition): DerivedBodyShape 
       `That weight at ${bodyFatPercent.toFixed(1)}% body fat implies an FFMI of ` +
         `${fatFreeIndex.toFixed(1)}, which is not a real amount of lean mass.`,
     );
-  } else if (fatFreeIndex > FFMI_MASCULINE.max) {
+  } else if (fatFreeIndex > FFMI_MASCULINE.max + 0.5) {
     warnings.push(
       `An FFMI of ${fatFreeIndex.toFixed(1)} is beyond what is typically achievable naturally.`,
     );
@@ -257,11 +303,11 @@ export function deriveBodyShape(composition: BodyComposition): DerivedBodyShape 
     fatMassKg,
     leanMassKg,
     ffmi: fatFreeIndex,
+    fmi: fatIndex,
     muscularity,
-    fatMorphWeight: fatNormalized,
-    // Visible muscle definition needs both muscle mass and low enough fat to see
-    // it. A very muscular character at 40% body fat should read as big, not cut.
-    muscleMorphWeight: muscularity * (1 - 0.6 * fatNormalized),
+    fatMorphWeight: fatness,
+    muscleMorphWeight: muscularity,
+    definition: muscularity * (1 - 0.6 * normalize(VISUAL_BF_PERCENT, bodyFatPercent)),
     plausible: warnings.length === 0,
     warnings,
   };

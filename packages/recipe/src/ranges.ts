@@ -57,6 +57,48 @@ export const clampToRange = (range: Range, value: number): number =>
 export const isWithin = (range: Range, value: number): boolean =>
   value >= range.min && value <= range.max;
 
+/**
+ * A range with an explicit typical value, which need not sit at the midpoint.
+ *
+ * Needed because MPFB's macro dials treat 0.5 as *average*, while real-world
+ * indices are not symmetric about their average: a man's fat mass index runs
+ * roughly 1.5 when shredded, 5 when average and 13 when obese. Mapping that
+ * linearly onto 0..1 would place an average build at 0.28 and make everyone
+ * look thin.
+ */
+export interface Anchors {
+  readonly min: number;
+  readonly neutral: number;
+  readonly max: number;
+  readonly unit: string;
+}
+
+/** Maps a value onto 0..1 with `neutral` landing exactly on 0.5. */
+export function normalizeAroundNeutral(anchors: Anchors, value: number): number {
+  if (value <= anchors.neutral) {
+    const span = anchors.neutral - anchors.min;
+    return span <= 0 ? 0.5 : clamp01(0.5 * ((value - anchors.min) / span));
+  }
+  const span = anchors.max - anchors.neutral;
+  return span <= 0 ? 0.5 : clamp01(0.5 + 0.5 * ((value - anchors.neutral) / span));
+}
+
+/** Inverse of `normalizeAroundNeutral`. */
+export function denormalizeAroundNeutral(anchors: Anchors, t: number): number {
+  const clamped = clamp01(t);
+  return clamped <= 0.5
+    ? lerp(anchors.min, anchors.neutral, clamped / 0.5)
+    : lerp(anchors.neutral, anchors.max, (clamped - 0.5) / 0.5);
+}
+
+/** Blends two anchor sets, used to interpolate references across gender. */
+export const lerpAnchors = (a: Anchors, b: Anchors, t: number): Anchors => ({
+  min: lerp(a.min, b.min, clamp01(t)),
+  neutral: lerp(a.neutral, b.neutral, clamp01(t)),
+  max: lerp(a.max, b.max, clamp01(t)),
+  unit: a.unit,
+});
+
 /** Normalized 0..1 -> value within `range`. */
 export const denormalize = (range: Range, t: number): number =>
   lerp(range.min, range.max, clamp01(t));

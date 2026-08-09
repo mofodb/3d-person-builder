@@ -70,11 +70,41 @@ test("the same body at higher body fat reads as less muscular", () => {
   assert.equal(lean.bmi.toFixed(3), soft.bmi.toFixed(3));
 });
 
-test("at constant body fat, more weight means more muscle", () => {
+test("at constant body fat, more weight means more of both tissues", () => {
+  // Percentage is relative, so scaling mass at fixed percentage scales fat and
+  // lean mass together. Both indices must rise; this is why the weight macro is
+  // driven by fat mass index rather than by percentage.
   const base = { heightCm: 180, bodyFatPercent: 12, gender: 1 };
   const lighter = deriveBodyShape({ ...base, massKg: 70 });
   const heavier = deriveBodyShape({ ...base, massKg: 95 });
-  assert.ok(heavier.muscularity > lighter.muscularity);
+
+  assert.ok(heavier.muscularity > lighter.muscularity, "muscularity should rise");
+  assert.ok(heavier.fmi > lighter.fmi, "fat mass index should rise");
+  assert.ok(
+    heavier.fatMorphWeight > lighter.fatMorphWeight,
+    "fat morph should rise even at identical body fat percentage",
+  );
+});
+
+test("the muscle macro is not reduced by body fat", () => {
+  // Suppressing muscle by fat was the bug that made heavy muscular characters
+  // look unremarkable. A fat strong person still has large muscles; only their
+  // visible separation is hidden, which is what `definition` is for.
+  const lean = deriveBodyShape({ heightCm: 180, massKg: 80, bodyFatPercent: 10, gender: 1 });
+  const fat = deriveBodyShape({
+    heightCm: 180,
+    // Same lean mass as above (72 kg), just with far more fat on top.
+    massKg: 72 / (1 - 0.35),
+    bodyFatPercent: 35,
+    gender: 1,
+  });
+
+  assert.ok(Math.abs(fat.leanMassKg - lean.leanMassKg) < 0.5, "lean mass should match");
+  assert.ok(
+    Math.abs(fat.muscleMorphWeight - lean.muscleMorphWeight) < 0.01,
+    "equal lean mass must give equal muscle, regardless of fat",
+  );
+  assert.ok(fat.fatMorphWeight > lean.fatMorphWeight, "the fat morph carries the difference");
 });
 
 test("muscularity and FFMI round-trip", () => {
@@ -164,13 +194,33 @@ test("morph weights stay within 0..1 across the whole design space", () => {
   }
 });
 
-test("visible definition is suppressed by high body fat", () => {
+test("visible definition, unlike muscle size, is suppressed by fat", () => {
   const base = { heightCm: 180, massKg: 95, gender: 1 };
   const cut = deriveBodyShape({ ...base, bodyFatPercent: 8 });
   const bulky = deriveBodyShape({ ...base, bodyFatPercent: 35 });
   assert.ok(
-    bulky.muscleMorphWeight < cut.muscleMorphWeight,
+    bulky.definition < cut.definition,
     "a fat strong character should read as big, not as defined",
+  );
+});
+
+test("an average build sits at the middle of both macros", () => {
+  // MPFB treats 0.5 as average, so the mapping must agree or every character
+  // drifts toward one extreme. Real-world indices are not symmetric about their
+  // average, which is why anchored normalization exists.
+  const shape = deriveBodyShape({
+    heightCm: 178,
+    massKg: 80,
+    bodyFatPercent: 20,
+    gender: 1,
+  });
+  assert.ok(
+    Math.abs(shape.fatMorphWeight - 0.5) < 0.15,
+    `fat macro ${shape.fatMorphWeight} should be near average`,
+  );
+  assert.ok(
+    Math.abs(shape.muscleMorphWeight - 0.5) < 0.2,
+    `muscle macro ${shape.muscleMorphWeight} should be near average`,
   );
 });
 
