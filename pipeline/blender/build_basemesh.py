@@ -393,7 +393,14 @@ def validate_shape_keys(obj, extracted: list) -> None:
         )
 
 
-def main():
+def build_character() -> tuple:
+    """Builds the rigged, morphed base mesh and its manifest, stopping short of
+    export. Factored out of `main()` so other scripts (animation merging) can
+    build on top of the same character before writing the GLB, rather than
+    duplicating this logic or round-tripping through the exported file.
+
+    Returns (base_object, manifest_dict).
+    """
     bpy.ops.wm.read_factory_settings(use_empty=True)
     HumanService = import_mpfb("services.humanservice").HumanService
 
@@ -490,17 +497,6 @@ def main():
     }
     print("BUILD final:", json.dumps(stats))
 
-    os.makedirs(DIST_DIR, exist_ok=True)
-    bpy.ops.object.select_all(action="SELECT")
-    bpy.ops.export_scene.gltf(
-        filepath=GLB_PATH,
-        export_format="GLB",
-        export_morph=True,
-        export_skins=True,
-        export_apply=False,
-        export_yup=True,
-    )
-
     manifest = {
         "generator": "pipeline/blender/build_basemesh.py",
         "rig": {"name": RIG_NAME, "bones": bone_count},
@@ -523,12 +519,34 @@ def main():
             "maxYears": AGE_MAX_YEARS,
             "dialAt13": round(AGE_DIAL_AT_13, 6),
         },
+        "animations": [],
     }
+    return base, manifest
+
+
+def export(base, manifest: dict) -> None:
+    os.makedirs(DIST_DIR, exist_ok=True)
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.export_scene.gltf(
+        filepath=GLB_PATH,
+        export_format="GLB",
+        export_morph=True,
+        export_skins=True,
+        export_apply=False,
+        export_yup=True,
+        export_animations=True,
+        export_nla_strips=True,
+    )
     with open(MANIFEST_PATH, "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, indent=2)
 
     print("BUILD glb:", GLB_PATH, os.path.getsize(GLB_PATH))
     print("BUILD manifest:", MANIFEST_PATH)
+
+
+def main():
+    base, manifest = build_character()
+    export(base, manifest)
 
 
 if __name__ == "__main__":
