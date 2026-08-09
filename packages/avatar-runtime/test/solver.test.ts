@@ -181,6 +181,41 @@ test("age dial is monotonic", () => {
   }
 });
 
+test("bust size follows femininity, maxing out at full feminine", () => {
+  const feminine = solveMorphWeights(withBody({ gender: 0 }), manifest);
+  const masculine = solveMorphWeights(withBody({ gender: 1 }), manifest);
+  assert.equal(feminine.weights["cupsize_large"], 1);
+  assert.equal(feminine.weights["cupsize_small"], 0);
+  assert.equal(masculine.weights["cupsize_small"], 1);
+  assert.equal(masculine.weights["cupsize_large"], 0);
+});
+
+test("bust size is unchanged at the androgynous default", () => {
+  // The bust/gender coupling must not shift the default character's look.
+  const androgynous = solveMorphWeights(createDefaultRecipe(), manifest);
+  assert.equal(androgynous.weights["cupsize_small"], 0);
+  assert.equal(androgynous.weights["cupsize_large"], 0);
+});
+
+test("bust size is already pronounced before the feminine extreme", () => {
+  // The whole point of the fix: previously this was 0 everywhere except the
+  // literal endpoint, so a mostly-feminine character still looked androgynous.
+  const mostlyFeminine = solveMorphWeights(withBody({ gender: 0.25 }), manifest);
+  assert.ok(
+    mostlyFeminine.weights["cupsize_large"]! > 0.5,
+    `got ${mostlyFeminine.weights["cupsize_large"]}`,
+  );
+});
+
+test("bust size responds symmetrically to gender on both sides", () => {
+  const feminineSide = solveMorphWeights(withBody({ gender: 0.25 }), manifest);
+  const masculineSide = solveMorphWeights(withBody({ gender: 0.75 }), manifest);
+  assert.ok(
+    Math.abs(feminineSide.weights["cupsize_large"]! - masculineSide.weights["cupsize_small"]!) <
+      1e-9,
+  );
+});
+
 test("fatter characters get more fat morph", () => {
   const lean = solveMorphWeights(withBody({ bodyFatPercent: 8 }), manifest);
   const fat = solveMorphWeights(withBody({ bodyFatPercent: 40 }), manifest);

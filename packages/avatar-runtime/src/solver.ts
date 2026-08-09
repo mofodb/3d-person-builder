@@ -41,6 +41,29 @@ export function yearsToAgeDial(years: number, manifest: BaseMeshManifest): numbe
   return clamp01(0.5 + (years - neutralYears) / ((maxYears - neutralYears) * 2));
 }
 
+/**
+ * Bust size implied purely by femininity, in the absence of an explicit
+ * recipe control for it.
+ *
+ * `cupsize_small`/`cupsize_large` are real, sizeable morphs (up to ~8.5 cm of
+ * displacement) that previously sat hardcoded at neutral regardless of
+ * `gender`, so a fully feminine character never got a fuller bust than an
+ * androgynous one.
+ *
+ * Symmetric around the androgynous midpoint by construction (gender=0.5 must
+ * keep giving the same neutral 0.5 cupsize target as before, or every existing
+ * default-gender character would visibly change). Deviation from that midpoint
+ * is pushed through an ease-out curve (exponent < 1) rather than scaled
+ * linearly, so the effect is clearly pronounced well before the slider reaches
+ * its extreme rather than only in the last few percent of travel.
+ */
+function bustTargetFromGender(gender: number): number {
+  const femininity = 1 - clamp01(gender);
+  const deviation = femininity - 0.5; // -0.5..0.5, zero at androgynous
+  const emphasized = Math.sign(deviation) * (Math.abs(deviation) / 0.5) ** 0.6 * 0.5;
+  return clamp01(0.5 + emphasized);
+}
+
 /** Target value for each macro axis implied by the recipe. */
 function macroTargets(recipe: CharacterRecipe, manifest: BaseMeshManifest): Map<string, number> {
   const { body } = recipe;
@@ -57,9 +80,9 @@ function macroTargets(recipe: CharacterRecipe, manifest: BaseMeshManifest): Map<
     ["age", yearsToAgeDial(body.ageYears, manifest)],
     ["weight", shape.fatMorphWeight],
     ["muscle", shape.muscleMorphWeight],
-    // Not yet exposed in the recipe; held at neutral so they contribute nothing.
+    // Not yet exposed in the recipe; held at neutral so it contributes nothing.
     ["proportions", 0.5],
-    ["cupsize", 0.5],
+    ["cupsize", bustTargetFromGender(body.gender)],
     ["firmness", 0.5],
     ["race.african", ancestry.african],
     ["race.asian", ancestry.asian],
