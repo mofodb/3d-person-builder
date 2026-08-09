@@ -12,8 +12,46 @@ import type { CharacterRecipe } from "./schema.ts";
  */
 type Migration = (input: Record<string, unknown>) => Record<string, unknown>;
 
+const asRecord = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+
+const asNumber = (value: unknown, fallback: number): number =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+/**
+ * v1 -> v2: physical measurements moved from normalized 0..1 to real units, and
+ * the `weight` fatness dial was replaced by an actual `massKg`.
+ *
+ * v1 normalized values were interpreted against the ranges in force at the
+ * time, so those old bounds are hardcoded here. That is the point of a
+ * migration: it must reproduce the past, not track the present.
+ */
+const migrateV1ToV2: Migration = (recipe) => {
+  const body = asRecord(recipe["body"]);
+  const { age, height, weight, ...restOfBody } = body;
+
+  const V1_HEIGHT_CM = { min: 148, max: 202 };
+  const V1_AGE_YEARS = { min: 18, max: 75 };
+  const lerp = (r: { min: number; max: number }, t: number) =>
+    r.min + (r.max - r.min) * Math.min(1, Math.max(0, t));
+
+  const heightCm = lerp(V1_HEIGHT_CM, asNumber(height, 0.5));
+  const ageYears = Math.round(lerp(V1_AGE_YEARS, asNumber(age, 0.35)));
+
+  // v1 `weight` was a 0..1 fatness dial with no absolute meaning. Map it onto a
+  // BMI span so previously-saved characters keep roughly their original build.
+  const bmi = lerp({ min: 17, max: 38 }, asNumber(weight, 0.4));
+  const massKg = Math.round(bmi * (heightCm / 100) ** 2 * 10) / 10;
+
+  return {
+    ...recipe,
+    schemaVersion: 2,
+    body: { ...restOfBody, heightCm: Math.round(heightCm * 10) / 10, ageYears, massKg },
+  };
+};
+
 const MIGRATIONS: Record<number, Migration> = {
-  // 1: (r) => ({ ...r, schemaVersion: 2, newField: defaultValue }),
+  1: migrateV1ToV2,
 };
 
 export class RecipeMigrationError extends Error {}

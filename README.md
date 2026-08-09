@@ -10,13 +10,24 @@ animation-ready model.
 
 The core idea is that a character is **data, not a model**.
 
-A `CharacterRecipe` is a small (< 1 KB) JSON document describing a character as
-normalized parameters. At runtime the app loads **one shared base GLB** (mesh +
-skeleton + morph targets + animations) and applies a recipe to it. A game can
-therefore transmit a character as ~1 KB of JSON rather than a multi-megabyte
-model, and every character shares one cached asset and one animation set.
+A `CharacterRecipe` is a small (< 1 KB) JSON document describing a character. At
+runtime the app loads **one shared base GLB** (mesh + skeleton + morph targets +
+animations) and applies a recipe to it. A game can therefore transmit a
+character as ~1 KB of JSON rather than a multi-megabyte model, and every
+character shares one cached asset and one animation set.
 
 Baking a standalone `.glb` is an *export* feature, not the runtime path.
+
+### Measurements
+
+Height, mass, and age are specified in **real units** — cm/kg, or feet-inches
+and pounds in the UI. Only unitless art-direction dials (muscularity, nose
+width, cheekbones) are normalized 0–1.
+
+**Body fat is derived, not set.** Mass alone doesn't determine appearance: 180 cm
+and 80 kg looks completely different lean versus soft. So you give height, mass,
+and muscularity, and body fat follows from them. Impossible combinations
+(6'8" at 30 kg) are flagged rather than silently built.
 
 ### Model format
 

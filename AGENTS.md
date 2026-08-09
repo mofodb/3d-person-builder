@@ -75,9 +75,26 @@ already-open shell needs a PATH refresh.
 
 ## Conventions
 
-- Recipe values are **normalized** (0..1, or -1..1 when symmetric). Physical
-  units live in `packages/recipe/src/ranges.ts` only. Changing a range must
-  never invalidate a saved character.
+- **Real measurements are stored in real SI units** (cm, kg, years). Normalizing
+  them would mean that widening a range later silently resized every saved
+  character. Imperial units exist only at the UI boundary
+  (`packages/recipe/src/units.ts`); display preference is user state, not
+  character data, so it never enters a recipe.
+- **Unitless art-direction values are normalized** (0..1, or -1..1 when
+  symmetric about a neutral midpoint): muscularity, cheekbone prominence, nose
+  width. These only mean anything relative to the art, so their ranges live in
+  `ranges.ts`.
+- **Body fat is derived, never stored.** Mass alone does not determine
+  appearance -- 180 cm / 80 kg looks entirely different lean versus soft -- so
+  body fat comes from height + mass + age + gender + muscularity via
+  `deriveBodyShape()`. Storing both mass and fatness would let them contradict
+  each other. Consume `deriveBodyShape()` rather than reimplementing physiology.
+- **Plausibility is judged on BMI, not body fat.** Body fat percentage cannot
+  express that a skeleton has a minimum mass: 203 cm at 30 kg computes to an
+  ordinary ~5% body fat but is impossible. See `PLAUSIBLE_BMI`.
+- Ranges come in two tiers: `HARD` bounds enforced by the schema (wide, so
+  future outliers need no migration) and `SLIDER` bounds for the UI working
+  span. The intended cast is 4'11"-6'8" and 95-265 lb.
 - Cosmetics are referenced by stable string ID (`category.asset_name`), never
   by file path.
 - Add a migration in `packages/recipe/src/migrate.ts` for every schema change.

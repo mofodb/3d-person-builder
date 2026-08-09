@@ -1,13 +1,28 @@
 import { z } from "zod";
 
+import {
+  AGE_YEARS,
+  DEFAULT_AGE_YEARS,
+  DEFAULT_HEIGHT_CM,
+  DEFAULT_MASS_KG,
+  HEIGHT_CM,
+  MASS_KG,
+} from "./ranges.ts";
+
 /**
  * A CharacterRecipe is the single source of truth for a character.
  *
  * Design rules:
- *  - Every tunable value is NORMALIZED (0..1, or -1..1 when symmetric around a
- *    neutral midpoint). Physical units (cm, kg) live in `ranges.ts`, never here.
- *    This keeps recipes independent of the base mesh, so re-authoring the mesh
- *    does not invalidate saved characters.
+ *  - Real-world measurements are stored in REAL SI UNITS (cm, kg, years).
+ *    Storing height as a normalized 0..1 would mean that widening the allowed
+ *    range later silently resized every saved character; "178 cm" is immune to
+ *    that. Conversion to imperial happens only at the UI boundary.
+ *  - Everything with no physical unit -- muscularity, cheekbone prominence,
+ *    nose width -- is NORMALIZED (0..1, or -1..1 when symmetric about a neutral
+ *    midpoint), because those values only mean anything relative to the art.
+ *  - Body fat is NOT stored. It is derived from height, mass, age, gender, and
+ *    muscularity; see body-composition.ts. Storing both mass and fatness would
+ *    allow the two to contradict each other.
  *  - Cosmetics are referenced by stable string ID, never by file path.
  *  - The whole thing must stay small enough to send over a network as JSON
  *    (target < 1 KB) so a game can transmit a character instead of a model.
@@ -40,16 +55,27 @@ export const BodyProportionsSchema = z.object({
   footSize: bipolar().default(0),
 });
 
+/** A real measurement in physical units, bounded by a hard schema range. */
+const measurement = (range: { min: number; max: number }, fallback: number) =>
+  z.number().min(range.min).max(range.max).default(fallback);
+
 export const BodySchema = z.object({
   /** 0 = fully feminine, 1 = fully masculine. 0.5 is androgynous. */
   gender: unit().default(0.5),
-  /** 0..1 maps onto an age range; see ranges.ts. */
-  age: unit().default(0.35),
-  /** 0..1 maps onto a height range in cm; see ranges.ts. */
-  height: unit().default(0.5),
-  /** Body fat. 0 = very lean, 1 = heavy. */
-  weight: unit().default(0.4),
-  /** 0 = untrained, 1 = heavily muscled. */
+  /** Age in years. */
+  ageYears: measurement(AGE_YEARS, DEFAULT_AGE_YEARS),
+  /** Standing height in centimetres. */
+  heightCm: measurement(HEIGHT_CM, DEFAULT_HEIGHT_CM),
+  /**
+   * Body mass in kilograms. Combined with height and muscularity this
+   * determines body fat, and hence how the mass is visually distributed.
+   */
+  massKg: measurement(MASS_KG, DEFAULT_MASS_KG),
+  /**
+   * How much of the character's mass is muscle rather than fat.
+   * 0 = untrained, 1 = heavily muscled. Unitless: it is an art-direction dial,
+   * not a measurement.
+   */
   muscularity: unit().default(0.35),
   proportions: BodyProportionsSchema.prefault({}),
 });
@@ -137,7 +163,7 @@ export const OutfitSchema = z.object(
   ) as Record<(typeof OUTFIT_SLOTS)[number], z.ZodDefault<z.ZodNullable<typeof OutfitSlotSchema>>>,
 );
 
-export const CHARACTER_RECIPE_VERSION = 1;
+export const CHARACTER_RECIPE_VERSION = 2;
 
 export const CharacterRecipeSchema = z.object({
   schemaVersion: z.literal(CHARACTER_RECIPE_VERSION),
