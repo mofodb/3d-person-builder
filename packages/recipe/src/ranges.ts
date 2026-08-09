@@ -26,6 +26,8 @@ export interface Range {
 export const HEIGHT_CM: Range = { min: 120, max: 250, unit: "cm" };
 export const MASS_KG: Range = { min: 25, max: 300, unit: "kg" };
 export const AGE_YEARS: Range = { min: 13, max: 100, unit: "years" };
+/** Survivable body fat percentages. Essential fat sets the floor. */
+export const BODY_FAT_PERCENT: Range = { min: 3, max: 60, unit: "%" };
 
 /**
  * Working span for UI sliders, covering the intended cast:
@@ -34,10 +36,13 @@ export const AGE_YEARS: Range = { min: 13, max: 100, unit: "years" };
 export const HEIGHT_CM_SLIDER: Range = { min: 145, max: 210, unit: "cm" };
 export const MASS_KG_SLIDER: Range = { min: 40, max: 125, unit: "kg" };
 export const AGE_YEARS_SLIDER: Range = { min: 18, max: 80, unit: "years" };
+/** Working span covering shredded athlete through obese. */
+export const BODY_FAT_PERCENT_SLIDER: Range = { min: 5, max: 50, unit: "%" };
 
 export const DEFAULT_HEIGHT_CM = 175;
 export const DEFAULT_MASS_KG = 72;
 export const DEFAULT_AGE_YEARS = 30;
+export const DEFAULT_BODY_FAT_PERCENT = 22;
 
 export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 

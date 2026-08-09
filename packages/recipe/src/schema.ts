@@ -2,7 +2,9 @@ import { z } from "zod";
 
 import {
   AGE_YEARS,
+  BODY_FAT_PERCENT,
   DEFAULT_AGE_YEARS,
+  DEFAULT_BODY_FAT_PERCENT,
   DEFAULT_HEIGHT_CM,
   DEFAULT_MASS_KG,
   HEIGHT_CM,
@@ -90,11 +92,18 @@ export const BodySchema = z.object({
    */
   massKg: measurement(MASS_KG, DEFAULT_MASS_KG),
   /**
-   * How much of the character's mass is muscle rather than fat.
-   * 0 = untrained, 1 = heavily muscled. Unitless: it is an art-direction dial,
-   * not a measurement.
+   * Body fat as a percentage of total mass.
+   *
+   * This is the second degree of freedom in body composition: height and mass
+   * alone cannot distinguish a lean, muscular body from a soft one. Given
+   * height, mass and this value, lean mass -- and therefore muscularity -- is
+   * fully determined. Muscularity is consequently derived rather than stored;
+   * see `deriveBodyShape`.
+   *
+   * Stored as a real measured quantity for the same reason as height and mass:
+   * "10%" means the same thing regardless of how the art is tuned.
    */
-  muscularity: unit().default(0.35),
+  bodyFatPercent: measurement(BODY_FAT_PERCENT, DEFAULT_BODY_FAT_PERCENT),
   ancestry: AncestrySchema.prefault({}),
   proportions: BodyProportionsSchema.prefault({}),
 });
@@ -196,7 +205,7 @@ export const OutfitSchema = z.object(
   ) as Record<(typeof OUTFIT_SLOTS)[number], z.ZodDefault<z.ZodNullable<typeof OutfitSlotSchema>>>,
 );
 
-export const CHARACTER_RECIPE_VERSION = 3;
+export const CHARACTER_RECIPE_VERSION = 4;
 
 export const CharacterRecipeSchema = z.object({
   schemaVersion: z.literal(CHARACTER_RECIPE_VERSION),

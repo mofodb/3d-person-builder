@@ -19,7 +19,7 @@
  * substitution stays contained.
  */
 
-import { bmi, clamp, clamp01, isWithin, normalize } from "./ranges.ts";
+import { bmi, clamp, clamp01, denormalize, isWithin, normalize } from "./ranges.ts";
 import type { Range } from "./ranges.ts";
 
 /** Body fat percentages outside this band are not survivable; clamp to it. */
@@ -70,6 +70,12 @@ export interface BodyMetrics {
 /**
  * Deurenberg body fat estimate, corrected for muscularity.
  * `gender` is interpolated continuously rather than treated as binary.
+ *
+ * No longer used to shape characters -- body fat is an explicit input now. This
+ * remains as an *initializer*: it produces a sensible starting body fat for a
+ * new character, for a photo-derived one, and for migrating recipes saved before
+ * body fat became a field. Do not reintroduce it into the shape path; being a
+ * population-average fit, it cannot represent athletic bodies.
  */
 export function estimateBodyFatPercent(metrics: BodyMetrics): number {
   const { heightCm, massKg, ageYears, gender, muscularity } = metrics;
@@ -119,41 +125,144 @@ export function plausibleMassRangeKg(heightCm: number): Range {
   };
 }
 
+// --- Muscularity from FFMI ----------------------------------------------------
+
+/**
+ * Fat-Free Mass Index: lean mass divided by height squared. Unlike BMI it is
+ * blind to fat, which makes it the honest measure of how muscular someone is.
+ *
+ * Reference points for men: ~16 untrained, ~19 average, ~21 athletic,
+ * ~23 very muscular, ~25 the rough ceiling for a natural athlete. Women run
+ * roughly three points lower, so the range is interpolated across `gender`.
+ */
+export const FFMI_FEMININE: Range = { min: 13, max: 21, unit: "kg/m^2" };
+export const FFMI_MASCULINE: Range = { min: 16, max: 25, unit: "kg/m^2" };
+
+/** Beyond this band, the implied lean mass is not a real human body. */
+export const PLAUSIBLE_FFMI: Range = { min: 11, max: 30, unit: "kg/m^2" };
+
+export function ffmiRange(gender: number): Range {
+  const t = clamp01(gender);
+  return {
+    min: FFMI_FEMININE.min + (FFMI_MASCULINE.min - FFMI_FEMININE.min) * t,
+    max: FFMI_FEMININE.max + (FFMI_MASCULINE.max - FFMI_FEMININE.max) * t,
+    unit: "kg/m^2",
+  };
+}
+
+export const ffmi = (heightCm: number, leanMassKg: number): number =>
+  leanMassKg / (heightCm / 100) ** 2;
+
+/** Normalized 0..1 muscularity from an FFMI value. */
+export const ffmiToMuscularity = (value: number, gender: number): number =>
+  normalize(ffmiRange(gender), value);
+
+/** FFMI implied by a normalized muscularity dial. */
+export const muscularityToFfmi = (muscularity: number, gender: number): number =>
+  denormalize(ffmiRange(gender), muscularity);
+
+/**
+ * Body fat percentage that would produce a given muscularity, holding height and
+ * mass fixed. Lets the UI offer a muscularity slider that writes back to the
+ * canonical body fat value, so the two can never disagree.
+ */
+export function bodyFatForMuscularity(input: {
+  heightCm: number;
+  massKg: number;
+  gender: number;
+  muscularity: number;
+}): number {
+  const targetFfmi = muscularityToFfmi(clamp01(input.muscularity), input.gender);
+  const leanMassKg = targetFfmi * (input.heightCm / 100) ** 2;
+  const percent = (1 - leanMassKg / input.massKg) * 100;
+  return clamp(percent, PHYSIOLOGICAL_BF_PERCENT.min, PHYSIOLOGICAL_BF_PERCENT.max);
+}
+
+// --- The shape a character actually gets --------------------------------------
+
+/** Height, mass and body fat fully determine composition; gender scales FFMI. */
+export interface BodyComposition {
+  readonly heightCm: number;
+  readonly massKg: number;
+  readonly bodyFatPercent: number;
+  /** 0 = fully feminine, 1 = fully masculine. Only shifts the FFMI reference. */
+  readonly gender: number;
+}
+
 export interface DerivedBodyShape {
   readonly bmi: number;
   readonly bodyFatPercent: number;
+  readonly fatMassKg: number;
+  readonly leanMassKg: number;
+  readonly ffmi: number;
+  /** 0..1 muscularity implied by the lean mass. Derived, never stored. */
+  readonly muscularity: number;
   /** 0..1 weight for the body fat morph target. */
   readonly fatMorphWeight: number;
   /** 0..1 weight for the muscle definition morph target. */
   readonly muscleMorphWeight: number;
-  /**
-   * False when the requested mass is impossible for this height, age, and
-   * muscularity. The shape is still built (clamped), but the UI should say so
-   * rather than silently producing something that does not match the number
-   * the user typed.
-   */
+  /** False when this combination is not a real body. Shape is still built. */
   readonly plausible: boolean;
+  /** Human-readable reasons, for the UI to surface. */
+  readonly warnings: readonly string[];
 }
 
 /**
  * The single entry point callers should use. Everything downstream -- the
  * Babylon runtime, the exporter, the Blender pipeline -- consumes this rather
  * than reimplementing the physiology.
+ *
+ * Body fat is an INPUT here, not a derivation. An earlier version derived it
+ * from a muscularity dial via the Deurenberg equation, which made athletic
+ * compositions unreachable: that formula is fitted to a general population, so
+ * no amount of muscularity would let a 188 cm, 92 kg character sit at 10% body
+ * fat, even though that is an entirely real body. Muscularity is now derived
+ * from FFMI instead, which measures it directly.
  */
-export function deriveBodyShape(metrics: BodyMetrics): DerivedBodyShape {
-  const bodyFatPercent = estimateBodyFatPercent(metrics);
-  const bodyMassIndex = bmi(metrics.heightCm, metrics.massKg);
+export function deriveBodyShape(composition: BodyComposition): DerivedBodyShape {
+  const { heightCm, massKg, gender } = composition;
+  const bodyFatPercent = clamp(
+    composition.bodyFatPercent,
+    PHYSIOLOGICAL_BF_PERCENT.min,
+    PHYSIOLOGICAL_BF_PERCENT.max,
+  );
+
+  const fatMassKg = massKg * (bodyFatPercent / 100);
+  const leanMassKg = massKg - fatMassKg;
+  const bodyMassIndex = bmi(heightCm, massKg);
+  const fatFreeIndex = ffmi(heightCm, leanMassKg);
+  const muscularity = ffmiToMuscularity(fatFreeIndex, gender);
+  const fatNormalized = normalize(VISUAL_BF_PERCENT, bodyFatPercent);
+
+  const warnings: string[] = [];
+  if (!isWithin(PLAUSIBLE_BMI, bodyMassIndex)) {
+    warnings.push(
+      `A BMI of ${bodyMassIndex.toFixed(1)} is outside the believable range for this height.`,
+    );
+  }
+  if (!isWithin(PLAUSIBLE_FFMI, fatFreeIndex)) {
+    warnings.push(
+      `That weight at ${bodyFatPercent.toFixed(1)}% body fat implies an FFMI of ` +
+        `${fatFreeIndex.toFixed(1)}, which is not a real amount of lean mass.`,
+    );
+  } else if (fatFreeIndex > FFMI_MASCULINE.max) {
+    warnings.push(
+      `An FFMI of ${fatFreeIndex.toFixed(1)} is beyond what is typically achievable naturally.`,
+    );
+  }
 
   return {
     bmi: bodyMassIndex,
     bodyFatPercent,
-    fatMorphWeight: normalize(VISUAL_BF_PERCENT, bodyFatPercent),
-    // Visible muscle definition requires both muscle mass and low enough fat to
-    // see it. A very muscular character at 40% body fat should read as big, not
-    // as defined.
-    muscleMorphWeight:
-      clamp01(metrics.muscularity) *
-      (1 - 0.6 * normalize(VISUAL_BF_PERCENT, bodyFatPercent)),
-    plausible: isWithin(PLAUSIBLE_BMI, bodyMassIndex),
+    fatMassKg,
+    leanMassKg,
+    ffmi: fatFreeIndex,
+    muscularity,
+    fatMorphWeight: fatNormalized,
+    // Visible muscle definition needs both muscle mass and low enough fat to see
+    // it. A very muscular character at 40% body fat should read as big, not cut.
+    muscleMorphWeight: muscularity * (1 - 0.6 * fatNormalized),
+    plausible: warnings.length === 0,
+    warnings,
   };
 }

@@ -3,6 +3,8 @@ import { useCallback } from "react";
 import {
   AGE_YEARS,
   AGE_YEARS_SLIDER,
+  BODY_FAT_PERCENT,
+  BODY_FAT_PERCENT_SLIDER,
   HEIGHT_CM,
   HEIGHT_CM_SLIDER,
   MASS_KG,
@@ -11,7 +13,6 @@ import {
   formatMass,
   parseHeightToCm,
   parseMassToKg,
-  plausibleMassRangeKg,
 } from "@tpb/recipe";
 import type { SolveResult } from "@tpb/avatar-runtime";
 
@@ -24,7 +25,18 @@ const describeMuscle = (value: number): string => {
   if (value < 0.45) return "average";
   if (value < 0.7) return "athletic";
   if (value < 0.9) return "muscular";
-  return "bodybuilder";
+  return "elite";
+};
+
+/** Rough descriptive bands. Women carry more essential fat than men. */
+const describeBodyFat = (percent: number, gender: number): string => {
+  const shift = 8 * (1 - Math.min(1, Math.max(0, gender)));
+  if (percent < 6 + shift) return "competition lean";
+  if (percent < 14 + shift) return "athletic";
+  if (percent < 19 + shift) return "fit";
+  if (percent < 25 + shift) return "average";
+  if (percent < 32 + shift) return "overweight";
+  return "obese";
 };
 
 export function Controls({ solve }: { solve: SolveResult | null }) {
@@ -33,6 +45,7 @@ export function Controls({ solve }: { solve: SolveResult | null }) {
   const setUnits = useCharacter((s) => s.setUnits);
   const patchBody = useCharacter((s) => s.patchBody);
   const setAncestry = useCharacter((s) => s.setAncestry);
+  const setMuscularity = useCharacter((s) => s.setMuscularity);
   const shape = useCharacter((s) => s.shape)();
 
   const { body } = recipe;
@@ -41,8 +54,6 @@ export function Controls({ solve }: { solve: SolveResult | null }) {
   const parseHeightValue = useCallback((text: string) => parseHeightToCm(text, units), [units]);
   const formatMassValue = useCallback((kg: number) => formatMass(kg, units), [units]);
   const parseMassValue = useCallback((text: string) => parseMassToKg(text, units), [units]);
-
-  const massRange = plausibleMassRangeKg(body.heightCm);
 
   return (
     <div className="controls">
@@ -93,12 +104,12 @@ export function Controls({ solve }: { solve: SolveResult | null }) {
           onChange={(massKg) => patchBody({ massKg })}
         />
 
-        {!shape.plausible ? (
-          <p className="warning">
-            That weight is outside the believable range for this height (
-            {formatMass(massRange.min, units)}&ndash;{formatMass(massRange.max, units)}). The model
-            is still built, but it will not look like the number you typed.
-          </p>
+        {shape.warnings.length > 0 ? (
+          <div className="warning">
+            {shape.warnings.map((warning) => (
+              <p key={warning}>{warning}</p>
+            ))}
+          </div>
         ) : null}
 
         <MeasurementField
@@ -125,13 +136,34 @@ export function Controls({ solve }: { solve: SolveResult | null }) {
           onChange={(gender) => patchBody({ gender })}
         />
 
+        <MeasurementField
+          label="Body fat"
+          value={body.bodyFatPercent}
+          format={(percent) => `${percent.toFixed(1)}%`}
+          parse={(text) => {
+            const match = text.match(/(\d+(?:\.\d+)?)/);
+            return match?.[1] !== undefined ? Number(match[1]) : null;
+          }}
+          min={BODY_FAT_PERCENT.min}
+          max={BODY_FAT_PERCENT.max}
+          sliderMin={BODY_FAT_PERCENT_SLIDER.min}
+          sliderMax={BODY_FAT_PERCENT_SLIDER.max}
+          step={0.5}
+          hint={describeBodyFat(body.bodyFatPercent, body.gender)}
+          onChange={(bodyFatPercent) => patchBody({ bodyFatPercent })}
+        />
+
         <Slider
           label="Muscularity"
-          value={body.muscularity}
-          readout={describeMuscle(body.muscularity)}
-          ends={["untrained", "bodybuilder"]}
-          onChange={(muscularity) => patchBody({ muscularity })}
+          value={shape.muscularity}
+          readout={`${describeMuscle(shape.muscularity)} · FFMI ${shape.ffmi.toFixed(1)}`}
+          ends={["untrained", "elite"]}
+          onChange={setMuscularity}
         />
+        <p className="note">
+          Muscularity is derived from lean mass, so dragging it adjusts body fat at the same
+          weight. To get bigger <em>and</em> leaner, raise the weight too.
+        </p>
       </section>
 
       <section>
@@ -156,8 +188,14 @@ export function Controls({ solve }: { solve: SolveResult | null }) {
           <dt>BMI</dt>
           <dd>{shape.bmi.toFixed(1)}</dd>
 
-          <dt>Body fat</dt>
-          <dd>{shape.bodyFatPercent.toFixed(1)}%</dd>
+          <dt>Lean mass</dt>
+          <dd>{formatMass(shape.leanMassKg, units)}</dd>
+
+          <dt>Fat mass</dt>
+          <dd>{formatMass(shape.fatMassKg, units)}</dd>
+
+          <dt>FFMI</dt>
+          <dd>{shape.ffmi.toFixed(1)}</dd>
 
           <dt>Fat morph</dt>
           <dd>{shape.fatMorphWeight.toFixed(2)}</dd>
@@ -176,8 +214,8 @@ export function Controls({ solve }: { solve: SolveResult | null }) {
           ) : null}
         </dl>
         <p className="note">
-          Body fat is derived from height, weight, age, gender and muscularity &mdash; it is never
-          stored directly, so mass and build can never contradict each other.
+          Height, weight and body fat are the inputs. Lean mass and muscularity follow from them
+          via FFMI, so the numbers can never contradict each other.
         </p>
       </section>
     </div>

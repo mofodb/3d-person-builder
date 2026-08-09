@@ -155,8 +155,17 @@ test("measurements outside the hard bounds are rejected", () => {
 
 test("normalized art parameters are still range-checked", () => {
   const base = createDefaultRecipe();
-  const bad = { ...base, body: { ...base.body, muscularity: 1.5 } };
+  const bad = { ...base, body: { ...base.body, gender: 1.5 } };
   assert.throws(() => CharacterRecipeSchema.parse(bad));
+});
+
+test("body fat is stored and muscularity is not", () => {
+  const { body } = createDefaultRecipe();
+  assert.equal(body.bodyFatPercent, 22);
+  assert.ok(
+    !("muscularity" in body),
+    "muscularity is derived from FFMI and must not be stored",
+  );
 });
 
 test("oversized identity vectors are rejected", () => {
@@ -222,7 +231,55 @@ test("migration preserves fields it does not touch", () => {
   assert.equal(migrated.id, source.id);
   assert.equal(migrated.name, "Legacy");
   assert.equal(migrated.body.gender, 0.5);
-  assert.equal(migrated.body.muscularity, 0.35);
+});
+
+test("v3 muscularity becomes an equivalent body fat", () => {
+  // Replays the old Deurenberg path so a saved character keeps its build.
+  const v3 = {
+    ...createDefaultRecipe(),
+    schemaVersion: 3,
+    body: {
+      gender: 1,
+      ageYears: 48,
+      heightCm: 187.96,
+      massKg: 91.63,
+      muscularity: 1,
+      ancestry: { african: 1 / 3, asian: 1 / 3, caucasian: 1 / 3 },
+      proportions: {},
+    },
+  } as unknown;
+
+  const migrated = migrateRecipe(v3);
+  assert.equal(migrated.schemaVersion, CHARACTER_RECIPE_VERSION);
+  // The old model produced roughly 21% for this character, and that is exactly
+  // the ceiling that made a lean athletic build unreachable.
+  assert.ok(
+    migrated.body.bodyFatPercent > 18 && migrated.body.bodyFatPercent < 24,
+    `got ${migrated.body.bodyFatPercent}%`,
+  );
+  assert.ok(!("muscularity" in (migrated.body as Record<string, unknown>)));
+});
+
+test("a v3 character can now reach a body fat the old model could not", () => {
+  const migrated = migrateRecipe({
+    ...createDefaultRecipe(),
+    schemaVersion: 3,
+    body: {
+      gender: 1,
+      ageYears: 48,
+      heightCm: 187.96,
+      massKg: 91.63,
+      muscularity: 1,
+      ancestry: { african: 1 / 3, asian: 1 / 3, caucasian: 1 / 3 },
+      proportions: {},
+    },
+  } as unknown);
+
+  const lean = CharacterRecipeSchema.parse({
+    ...migrated,
+    body: { ...migrated.body, bodyFatPercent: 10 },
+  });
+  assert.equal(lean.body.bodyFatPercent, 10);
 });
 
 test("migration handles a v1 recipe with missing body values", () => {

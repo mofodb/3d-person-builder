@@ -47,9 +47,8 @@ function macroTargets(recipe: CharacterRecipe, manifest: BaseMeshManifest): Map<
   const shape = deriveBodyShape({
     heightCm: body.heightCm,
     massKg: body.massKg,
-    ageYears: body.ageYears,
+    bodyFatPercent: body.bodyFatPercent,
     gender: body.gender,
-    muscularity: body.muscularity,
   });
   const ancestry = normalizeAncestry(body.ancestry);
 

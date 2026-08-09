@@ -112,14 +112,29 @@ already-open shell needs a PATH refresh.
   symmetric about a neutral midpoint): muscularity, cheekbone prominence, nose
   width. These only mean anything relative to the art, so their ranges live in
   `ranges.ts`.
-- **Body fat is derived, never stored.** Mass alone does not determine
-  appearance -- 180 cm / 80 kg looks entirely different lean versus soft -- so
-  body fat comes from height + mass + age + gender + muscularity via
-  `deriveBodyShape()`. Storing both mass and fatness would let them contradict
-  each other. Consume `deriveBodyShape()` rather than reimplementing physiology.
-- **Plausibility is judged on BMI, not body fat.** Body fat percentage cannot
-  express that a skeleton has a minimum mass: 203 cm at 30 kg computes to an
-  ordinary ~5% body fat but is impossible. See `PLAUSIBLE_BMI`.
+- **Body composition has two degrees of freedom beyond height: fat mass and lean
+  mass.** The stored inputs are `heightCm`, `massKg` and `bodyFatPercent`.
+  **Muscularity is derived, never stored** -- it comes from FFMI (lean mass over
+  height squared), which is the objective measure of how muscular a body is.
+  Consume `deriveBodyShape()` rather than reimplementing physiology.
+- **Do not invert that relationship.** An earlier version stored a muscularity
+  dial and derived body fat from it through the Deurenberg equation. That made
+  athletic bodies unreachable: Deurenberg is a population-average fit, so a
+  188 cm / 92 kg character bottomed out near 21% body fat no matter how
+  muscular, even though 10% is an entirely real body at those dimensions.
+  `estimateBodyFatPercent()` survives only as an *initializer* for new or
+  photo-derived characters and for the v3 migration.
+- **Muscularity and body fat are two views of one value.** A muscularity slider
+  must write back through `bodyFatForMuscularity()` at fixed height and mass, so
+  the two can never disagree. To get bigger *and* leaner, mass must rise.
+- **Plausibility is judged on BMI and FFMI, never on body fat.** Body fat cannot
+  express that a skeleton has a minimum mass (203 cm at 30 kg computes to an
+  ordinary ~5%), and BMI cannot tell muscle from fat (250 kg at 5% implies 237 kg
+  of lean mass). Both checks are needed. See `PLAUSIBLE_BMI` and
+  `PLAUSIBLE_FFMI`; `deriveBodyShape()` returns human-readable `warnings`.
+- **FFMI reference points** (men; women run ~3 lower, interpolated by `gender`):
+  ~16 untrained, ~19 average, ~21 athletic, ~23 very muscular, ~25 the natural
+  ceiling. Above 25 warns; above 30 is rejected as not a real body.
 - Ranges come in two tiers: `HARD` bounds enforced by the schema (wide, so
   future outliers need no migration) and `SLIDER` bounds for the UI working
   span. The intended cast is 4'11"-6'8" and 95-265 lb.

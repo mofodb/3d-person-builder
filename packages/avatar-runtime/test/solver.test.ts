@@ -169,8 +169,37 @@ test("age dial is monotonic", () => {
   }
 });
 
-test("heavier characters get more fat morph", () => {
-  const light = solveMorphWeights(withBody({ massKg: 55 }), manifest);
-  const heavy = solveMorphWeights(withBody({ massKg: 110 }), manifest);
-  assert.ok(heavy.weights["weight_heavy"]! > light.weights["weight_heavy"]!);
+test("fatter characters get more fat morph", () => {
+  const lean = solveMorphWeights(withBody({ bodyFatPercent: 8 }), manifest);
+  const fat = solveMorphWeights(withBody({ bodyFatPercent: 40 }), manifest);
+  assert.ok(fat.weights["weight_heavy"]! > lean.weights["weight_heavy"]!);
+});
+
+test("extra weight at constant body fat becomes muscle, not fat", () => {
+  // Fat morph tracks body fat percentage alone, so adding mass while holding
+  // composition fixed must show up as muscle instead.
+  const light = solveMorphWeights(withBody({ massKg: 65, bodyFatPercent: 15 }), manifest);
+  const heavy = solveMorphWeights(withBody({ massKg: 95, bodyFatPercent: 15 }), manifest);
+
+  assert.equal(heavy.weights["weight_heavy"], light.weights["weight_heavy"]);
+  assert.ok(heavy.weights["muscle_high"]! > light.weights["muscle_high"]!);
+});
+
+test("a lean muscular 6'2\" 202 lb build reaches a high muscle morph", () => {
+  const solved = solveMorphWeights(
+    withBody({
+      heightCm: feetInchesToCm(6, 2),
+      massKg: poundsToKg(202),
+      bodyFatPercent: 10,
+      gender: 1,
+    }),
+    manifest,
+  );
+  // The muscle macro is neutral at 0.5, so a muscularity of ~0.8 lands about
+  // halfway between average and maximum on the morph itself.
+  assert.ok(solved.weights["muscle_high"]! > 0.45, `got ${solved.weights["muscle_high"]}`);
+  assert.equal(solved.weights["muscle_low"], 0);
+  // At 10% body fat the character should read lean, not heavy.
+  assert.equal(solved.weights["weight_heavy"], 0);
+  assert.ok(solved.weights["weight_light"]! > 0.6, `got ${solved.weights["weight_light"]}`);
 });

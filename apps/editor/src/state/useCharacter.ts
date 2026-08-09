@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import {
+  bodyFatForMuscularity,
   createDefaultRecipe,
   deriveBodyShape,
   serializeRecipe,
@@ -19,6 +20,9 @@ interface CharacterStore {
   setAncestry: (patch: Partial<Ancestry>) => void;
   setName: (name: string) => void;
   reset: () => void;
+
+  /** Writes back to bodyFatPercent, since muscularity is derived. */
+  setMuscularity: (muscularity: number) => void;
 
   /** Derived body composition for the current recipe. */
   shape: () => DerivedBodyShape;
@@ -56,10 +60,25 @@ export const useCharacter = create<CharacterStore>((set, get) => ({
     return deriveBodyShape({
       heightCm: body.heightCm,
       massKg: body.massKg,
-      ageYears: body.ageYears,
+      bodyFatPercent: body.bodyFatPercent,
       gender: body.gender,
-      muscularity: body.muscularity,
     });
+  },
+
+  /**
+   * Lets the UI offer a muscularity slider even though muscularity is derived.
+   * Dragging it back-solves the body fat that would produce that muscularity at
+   * the current height and mass, so the two can never disagree.
+   */
+  setMuscularity: (muscularity) => {
+    const { body } = get().recipe;
+    const bodyFatPercent = bodyFatForMuscularity({
+      heightCm: body.heightCm,
+      massKg: body.massKg,
+      gender: body.gender,
+      muscularity,
+    });
+    get().patchBody({ bodyFatPercent: Math.round(bodyFatPercent * 10) / 10 });
   },
 
   exportJson: () => serializeRecipe(get().recipe),

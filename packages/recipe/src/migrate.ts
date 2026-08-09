@@ -56,9 +56,53 @@ const migrateV1ToV2: Migration = (recipe) => {
  */
 const migrateV2ToV3: Migration = (recipe) => ({ ...recipe, schemaVersion: 3 });
 
+/**
+ * v3 -> v4: `body.muscularity` is replaced by `body.bodyFatPercent`.
+ *
+ * Muscularity used to be the input and body fat the derivation. That made
+ * athletic bodies unreachable, because the Deurenberg equation behind it is a
+ * population-average fit. The relationship is now inverted: body fat is stored
+ * and muscularity is derived from FFMI.
+ *
+ * To keep previously saved characters looking as they did, the old formula is
+ * replayed here to recover the body fat they were being given. The formula is
+ * inlined rather than imported so that future changes to the live code cannot
+ * retroactively alter what an old recipe means.
+ */
+const migrateV3ToV4: Migration = (recipe) => {
+  const body = asRecord(recipe["body"]);
+  const { muscularity, ...restOfBody } = body;
+
+  const heightCm = asNumber(body["heightCm"], 175);
+  const massKg = asNumber(body["massKg"], 72);
+  const ageYears = asNumber(body["ageYears"], 30);
+  const gender = asNumber(body["gender"], 0.5);
+  const muscle = asNumber(muscularity, 0.35);
+
+  const V3_BASELINE_MUSCULARITY = 0.35;
+  const V3_MUSCULARITY_BF_SWING = 7;
+  const bmi = massKg / (heightCm / 100) ** 2;
+  const bodyFatPercent =
+    1.2 * bmi +
+    0.23 * ageYears -
+    10.8 * Math.min(1, Math.max(0, gender)) -
+    5.4 -
+    (Math.min(1, Math.max(0, muscle)) - V3_BASELINE_MUSCULARITY) * V3_MUSCULARITY_BF_SWING;
+
+  return {
+    ...recipe,
+    schemaVersion: 4,
+    body: {
+      ...restOfBody,
+      bodyFatPercent: Math.round(Math.min(60, Math.max(3, bodyFatPercent)) * 10) / 10,
+    },
+  };
+};
+
 const MIGRATIONS: Record<number, Migration> = {
   1: migrateV1ToV2,
   2: migrateV2ToV3,
+  3: migrateV3ToV4,
 };
 
 export class RecipeMigrationError extends Error {}
