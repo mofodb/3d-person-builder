@@ -1,0 +1,278 @@
+:root {
+  --bg: #14161a;
+  --panel: #1b1e24;
+  --panel-2: #22262e;
+  --line: #2e333d;
+  --text: #e6e8ec;
+  --muted: #9aa2ae;
+  --accent: #5aa9e6;
+  --good: #6fcf97;
+  --bad: #eb5757;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  height: 100%;
+}
+
+.panel {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.controls {
+  padding: 16px;
+}
+
+.panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.panel-header h1 {
+  font-size: 16px;
+  margin: 0;
+  letter-spacing: 0.2px;
+}
+
+.unit-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.unit-toggle button {
+  flex: 1;
+  padding: 6px 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.unit-toggle button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #08121a;
+  font-weight: 600;
+}
+
+section {
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+}
+
+section h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.field-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.field-ends {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+.text-input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.text-input.invalid {
+  border-color: var(--bad);
+}
+
+.range-input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.readouts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.readouts dt {
+  color: var(--muted);
+}
+
+.readouts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.good {
+  color: var(--good);
+}
+
+.bad {
+  color: var(--bad);
+}
+
+.note {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 10px 0 0;
+}
+
+.warning {
+  background: rgba(235, 87, 87, 0.12);
+  border: 1px solid rgba(235, 87, 87, 0.4);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  margin: 0 0 14px;
+}
+
+.stage {
+  position: relative;
+  min-width: 0;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(20, 22, 26, 0.9);
+  text-align: center;
+  padding: 24px;
+}
+
+.overlay.error {
+  color: #ffd9d9;
+}
+
+.overlay h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.overlay .hint {
+  color: var(--muted);
+  font-size: 12px;
+  max-width: 520px;
+}
+
+.overlay code {
+  display: block;
+  margin-top: 6px;
+  padding: 8px;
+  background: #0f1114;
+  border-radius: 6px;
+  font-size: 11px;
+  overflow-x: auto;
+}
+
+.hud {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  background: rgba(15, 17, 20, 0.8);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.hud-buttons button {
+  padding: 3px 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.hud-buttons button:hover {
+  border-color: var(--accent);
+}

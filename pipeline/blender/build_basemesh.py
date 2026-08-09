@@ -50,27 +50,46 @@ def ancestry(african: float, asian: float, caucasian: float) -> dict:
 
 # Each entry becomes one shape key on the exported mesh. Names are the contract
 # with the TypeScript runtime and must not change without a manifest bump.
+# Each entry is (shape key name, macro axis, value at full influence, macro overrides).
+# The macro axis and value are exported in the manifest so the runtime can invert
+# them; note that `age_young` is extracted at 0.25 rather than 0, because the
+# schema's minimum age is 13 and a dial of 0 is an infant.
 MORPH_BASIS = [
-    ("gender_feminine", {"gender": 0.0}),
-    ("gender_masculine", {"gender": 1.0}),
-    ("age_young", {"age": AGE_DIAL_AT_13}),
-    ("age_old", {"age": 1.0}),
-    ("height_short", {"height": 0.0}),
-    ("height_tall", {"height": 1.0}),
-    ("weight_light", {"weight": 0.0}),
-    ("weight_heavy", {"weight": 1.0}),
-    ("muscle_low", {"muscle": 0.0}),
-    ("muscle_high", {"muscle": 1.0}),
-    ("proportions_uncommon", {"proportions": 0.0}),
-    ("proportions_ideal", {"proportions": 1.0}),
-    ("cupsize_small", {"cupsize": 0.0}),
-    ("cupsize_large", {"cupsize": 1.0}),
-    ("firmness_soft", {"firmness": 0.0}),
-    ("firmness_firm", {"firmness": 1.0}),
-    ("ancestry_african", {"race": ancestry(1.0, 0.0, 0.0)}),
-    ("ancestry_asian", {"race": ancestry(0.0, 1.0, 0.0)}),
-    ("ancestry_caucasian", {"race": ancestry(0.0, 0.0, 1.0)}),
+    ("gender_feminine", "gender", 0.0, {"gender": 0.0}),
+    ("gender_masculine", "gender", 1.0, {"gender": 1.0}),
+    ("age_young", "age", AGE_DIAL_AT_13, {"age": AGE_DIAL_AT_13}),
+    ("age_old", "age", 1.0, {"age": 1.0}),
+    ("height_short", "height", 0.0, {"height": 0.0}),
+    ("height_tall", "height", 1.0, {"height": 1.0}),
+    ("weight_light", "weight", 0.0, {"weight": 0.0}),
+    ("weight_heavy", "weight", 1.0, {"weight": 1.0}),
+    ("muscle_low", "muscle", 0.0, {"muscle": 0.0}),
+    ("muscle_high", "muscle", 1.0, {"muscle": 1.0}),
+    ("proportions_uncommon", "proportions", 0.0, {"proportions": 0.0}),
+    ("proportions_ideal", "proportions", 1.0, {"proportions": 1.0}),
+    ("cupsize_small", "cupsize", 0.0, {"cupsize": 0.0}),
+    ("cupsize_large", "cupsize", 1.0, {"cupsize": 1.0}),
+    ("firmness_soft", "firmness", 0.0, {"firmness": 0.0}),
+    ("firmness_firm", "firmness", 1.0, {"firmness": 1.0}),
+    ("ancestry_african", "race.african", 1.0, {"race": ancestry(1.0, 0.0, 0.0)}),
+    ("ancestry_asian", "race.asian", 1.0, {"race": ancestry(0.0, 1.0, 0.0)}),
+    ("ancestry_caucasian", "race.caucasian", 1.0, {"race": ancestry(0.0, 0.0, 1.0)}),
 ]
+
+# Neutral value of each macro axis, i.e. the shape the Basis key represents.
+MACRO_NEUTRALS = {
+    "gender": 0.5,
+    "age": 0.5,
+    "height": 0.5,
+    "weight": 0.5,
+    "muscle": 0.5,
+    "proportions": 0.5,
+    "cupsize": 0.5,
+    "firmness": 0.5,
+    "race.african": 1 / 3,
+    "race.asian": 1 / 3,
+    "race.caucasian": 1 / 3,
+}
 
 # Height dial values sampled per gender to build the cm lookup table.
 HEIGHT_SAMPLES = [0.0, 0.25, 0.5, 0.75, 1.0]
@@ -167,12 +186,14 @@ def measure_height_cm(coords: list, indices: list) -> float:
     return (max(zs) - min(zs)) * 100.0
 
 
-def calibrate_height(body_indices: list) -> dict:
-    """Measures real height across the dial so cm can be inverted to a weight.
+def survey_height_dial(body_indices: list) -> list:
+    """Records MPFB's own dial-to-centimetre response.
 
-    The dial is markedly non-linear -- roughly 18 cm per quarter-turn below the
-    midpoint and 35 cm above it -- so the runtime interpolates this table rather
-    than assuming a straight line.
+    Informational only. The runtime does NOT invert this table, because the
+    runtime blends the extracted morphs linearly whereas these numbers come from
+    MPFB's combinatorial blend -- two different functions of the same dial.
+    Kept because the non-linearity is worth documenting: roughly 18 cm per
+    quarter turn below the midpoint against 35 cm above it.
     """
     table = []
     for gender in GENDER_SAMPLES:
@@ -182,8 +203,44 @@ def calibrate_height(body_indices: list) -> dict:
             macros["height"] = dial
             cm = measure_height_cm(capture_variant(macros), body_indices)
             table.append({"gender": gender, "dial": dial, "cm": round(cm, 2)})
-            print(f"CALIBRATE gender={gender} dial={dial} -> {cm:.2f} cm")
-    return {"samples": table, "measuredOn": "body vertices only, helpers excluded"}
+            print(f"SURVEY gender={gender} dial={dial} -> {cm:.2f} cm")
+    return table
+
+
+def verify_blend_linearity(obj, body_indices: list, morph_name: str, height_delta_cm: float,
+                           neutral_cm: float) -> dict:
+    """Checks that height really is linear in morph influence.
+
+    The runtime solves the height morph weight from a linear equation, which is
+    only valid if interpolating vertex positions interpolates the bounding box
+    too. That holds as long as the same vertices stay extremal, so it is worth
+    measuring rather than trusting.
+    """
+    key_blocks = obj.data.shape_keys.key_blocks
+    if morph_name not in key_blocks:
+        return {"checked": False}
+
+    results = []
+    for influence in (0.25, 0.5, 0.75):
+        key_blocks[morph_name].value = influence
+        measured = measure_height_cm(evaluated_coords(obj), body_indices)
+        predicted = neutral_cm + influence * height_delta_cm
+        results.append(
+            {
+                "influence": influence,
+                "predicted_cm": round(predicted, 2),
+                "measured_cm": round(measured, 2),
+                "error_cm": round(measured - predicted, 3),
+            }
+        )
+        print(
+            f"LINEARITY {morph_name}@{influence}: predicted {predicted:.2f} "
+            f"measured {measured:.2f} error {measured - predicted:+.3f} cm"
+        )
+    key_blocks[morph_name].value = 0.0
+
+    worst = max(abs(r["error_cm"]) for r in results)
+    return {"checked": True, "morph": morph_name, "samples": results, "worst_error_cm": worst}
 
 
 def strip_helpers(obj) -> dict:
@@ -255,8 +312,10 @@ def main():
     basis = base.shape_key_add(name="Basis", from_mix=False)
     basis.interpolation = "KEY_LINEAR"
 
+    neutral_height_cm = measure_height_cm(neutral, body_indices)
+
     extracted = []
-    for name, overrides in MORPH_BASIS:
+    for name, macro_axis, macro_value, overrides in MORPH_BASIS:
         macros = neutral_macros()
         for key, value in overrides.items():
             macros[key] = value
@@ -276,11 +335,37 @@ def main():
             delta = max(abs(coord[axis] - neutral[index][axis]) for axis in range(3))
             max_delta = max(max_delta, delta)
 
-        extracted.append({"name": name, "max_delta_cm": round(max_delta * 100, 3)})
-        print(f"BUILD morph {name}: max delta {max_delta * 100:.2f} cm")
+        # How much this morph alone changes standing height. The runtime solves
+        # the height morph from these, so every morph that moves the scalp or
+        # soles has to contribute.
+        height_delta = measure_height_cm(coords, body_indices) - neutral_height_cm
 
-    print("BUILD calibrating height")
-    calibration = calibrate_height(body_indices)
+        extracted.append(
+            {
+                "name": name,
+                "macro": macro_axis,
+                "value": macro_value,
+                "neutral": MACRO_NEUTRALS[macro_axis],
+                "max_delta_cm": round(max_delta * 100, 3),
+                "height_delta_cm": round(height_delta, 3),
+            }
+        )
+        print(
+            f"BUILD morph {name}: max delta {max_delta * 100:.2f} cm, "
+            f"height {height_delta:+.2f} cm"
+        )
+
+    print("BUILD verifying blend linearity")
+    linearity = verify_blend_linearity(
+        base,
+        body_indices,
+        "height_tall",
+        next(m["height_delta_cm"] for m in extracted if m["name"] == "height_tall"),
+        neutral_height_cm,
+    )
+
+    print("BUILD surveying MPFB height dial (informational)")
+    dial_survey = survey_height_dial(body_indices)
 
     print("BUILD adding rig:", RIG_NAME)
     HumanService.add_builtin_rig(base, RIG_NAME, import_weights=True)
@@ -317,7 +402,16 @@ def main():
         "mesh": stats,
         "helpers": helper_stats,
         "morphs": extracted,
-        "heightCalibration": calibration,
+        "neutralHeightCm": round(neutral_height_cm, 3),
+        "blendLinearity": linearity,
+        "mpfbHeightDialSurvey": {
+            "note": (
+                "Informational. The runtime blends morphs linearly and solves height "
+                "from per-morph height_delta_cm; it does not invert this table."
+            ),
+            "measuredOn": "body vertices only, helpers excluded",
+            "samples": dial_survey,
+        },
         "ageDial": {
             "neutralYears": AGE_NEUTRAL_YEARS,
             "minYears": AGE_MIN_YEARS,
