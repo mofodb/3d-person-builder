@@ -38,13 +38,30 @@ Geometry is compressed with Draco/Meshopt and textures with KTX2/Basis.
 
 ## Budgets
 
-| Target | Value |
-|---|---|
-| LOD0 / LOD1 / LOD2 | 8k / 4k / 1.5k triangles |
-| Skeleton | ~55 bones, Mixamo-compatible naming |
-| Textures | 1K KTX2 atlas, one material per character |
-| Base GLB | < 3 MB compressed |
-| Recipe payload | < 1 KB JSON |
+| Target | Goal | Current |
+|---|---|---|
+| LOD0 triangles | 8k | **26,756** — see below |
+| LOD1 / LOD2 | 4k / 1.5k | not built yet |
+| Skeleton | ~55 bones | **52** (`rig.mixamo`, exact Mixamo naming) |
+| Textures | 1K KTX2 atlas, one material | not built yet |
+| Base GLB | < 3 MB compressed | **5.5 MB** uncompressed, no Draco/KTX2 yet |
+| Recipe payload | < 1 KB JSON | **~700 B** typical, ~1.7 KB with a photo fit |
+
+### On the triangle count
+
+The MakeHuman base mesh is 26,756 triangles after stripping helper geometry —
+about 3.3x the eventual LOD0 goal. This is knowingly deferred, not overlooked:
+
+- It is entirely fine for the editor and a single-player demo, which is all that
+  currently renders. It would *not* be fine for 30 characters on a phone.
+- Decimation is the wrong fix. It destroys morph targets and UV seams.
+- The right fix is a low-poly *proxy* mesh whose vertices are bound to the base
+  mesh by barycentric surface mapping, so body morphs propagate automatically.
+  That is exactly the mechanism behind MakeHuman's `.mhclo` proxies. MPFB ships
+  no proxy meshes, so this one has to be authored or generated.
+
+Doing that before the parametric system works would be backwards, so it is
+Phase 4 work. Nothing in the runtime depends on the current count.
 
 ## Layout
 

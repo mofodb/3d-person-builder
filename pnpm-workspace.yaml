@@ -1,3 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# pnpm blocks dependency build scripts unless explicitly allowed.
+# sharp is the image backend for @gltf-transform/cli, needed for texture
+# resizing and KTX2 preparation in the asset pipeline.
+allowBuilds:
+  sharp: true
