@@ -238,6 +238,32 @@ def remove_root_drift(action) -> int:
     return corrected
 
 
+def match_rotation_mode(armature_obj, action) -> int:
+    """Sets each pose bone's rotation_mode to match how the action animates it.
+
+    Blender only evaluates ONE rotation property per bone -- whichever
+    `rotation_mode` selects -- and silently ignores keyframes on the others.
+    Our rig's bones default to Euler ('XYZ'), matching a typical hand-authored
+    rig, but Mixamo's FBX skeletons animate `rotation_quaternion`. Copying the
+    action across without also matching the mode meant every rotation keyframe
+    was present in the data but never evaluated: only Hips translation (which
+    has no mode ambiguity) ever visibly moved, which is exactly the "T-pose
+    sliding around" symptom this fixes.
+    """
+    animated_bones = {
+        fcurve.data_path.split('"')[1]
+        for fcurve in action.fcurves
+        if fcurve.data_path.startswith('pose.bones["') and "rotation_quaternion" in fcurve.data_path
+    }
+    changed = 0
+    for bone_name in animated_bones:
+        pose_bone = armature_obj.pose.bones.get(bone_name)
+        if pose_bone and pose_bone.rotation_mode != "QUATERNION":
+            pose_bone.rotation_mode = "QUATERNION"
+            changed += 1
+    return changed
+
+
 def attach_animation(armature_obj, action, track_name: str) -> None:
     """Pushes an action onto its own NLA track, so multiple clips can coexist
     and the glTF exporter writes each track as a separate named animation."""
@@ -286,11 +312,26 @@ def main():
                 "The FBX skeleton probably doesn't use Mixamo's 'mixamorig:' bone names."
             )
 
+        rotation_bones = {
+            fc.data_path.split('"')[1]
+            for fc in action.fcurves
+            if fc.data_path.startswith('pose.bones["') and ".rotation_" in fc.data_path
+        }
+        if not rotation_bones:
+            raise RuntimeError(
+                f"{filename}: the action has no bone rotation curves at all. "
+                "A walk/idle cycle with zero rotated bones means something upstream "
+                "is broken; this would otherwise ship a limp animation silently."
+            )
+
         worst_hips = validate_hips_translation(armature, action, clip_name)
         print(f"ANIM {clip_name} worst Hips translation magnitude: {worst_hips:.3f}")
 
         drift_corrected = remove_root_drift(action)
         print(f"ANIM {clip_name} removed net drift on {drift_corrected} Hips axis curve(s)")
+
+        rotmode_changed = match_rotation_mode(armature, action)
+        print(f"ANIM {clip_name} switched {rotmode_changed} bone(s) to quaternion rotation mode")
 
         attach_animation(armature, action, clip_name)
         animations.append({"name": clip_name, **coverage})
