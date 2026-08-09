@@ -181,6 +181,46 @@ section h2 {
   margin: 10px 0 0;
 }
 
+.button-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.button-row button {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--accent);
+  color: #08121a;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.button-row button.secondary {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  font-weight: 400;
+}
+
+.button-row button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.color-input {
+  width: 40px;
+  height: 30px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
 .warning {
   background: rgba(235, 87, 87, 0.12);
   border: 1px solid rgba(235, 87, 87, 0.4);

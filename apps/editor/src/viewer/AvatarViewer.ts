@@ -14,6 +14,7 @@ import "@babylonjs/loaders/glTF/2.0/index.js";
 import { applyRecipe, loadAvatar } from "@tpb/avatar-runtime/babylon";
 import type { LoadedAvatar } from "@tpb/avatar-runtime/babylon";
 import type { SolveResult } from "@tpb/avatar-runtime";
+import { computeSkinColor } from "@tpb/recipe";
 import type { CharacterRecipe } from "@tpb/recipe";
 
 const MESH_URL = "/generated/basemesh.glb";
@@ -30,6 +31,7 @@ export class AvatarViewer {
   private camera: ArcRotateCamera | null = null;
   private avatar: LoadedAvatar | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  private skinMaterial: PBRMetallicRoughnessMaterial | null = null;
 
   async init(canvas: HTMLCanvasElement): Promise<void> {
     const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
@@ -71,7 +73,9 @@ export class AvatarViewer {
     this.camera = camera;
 
     this.avatar = await loadAvatar({ meshUrl: MESH_URL, manifestUrl: MANIFEST_URL, scene });
-    this.applySkinPlaceholder();
+    this.skinMaterial = new PBRMetallicRoughnessMaterial("skin", scene);
+    this.skinMaterial.metallic = 0;
+    this.avatar.mesh.material = this.skinMaterial;
 
     engine.runRenderLoop(() => scene.render());
 
@@ -82,20 +86,21 @@ export class AvatarViewer {
   }
 
   /**
-   * Temporary flat skin material. Phase 1 has no textures yet; this exists only
-   * so the silhouette and morph deformation are legible.
+   * Flat PBR skin color driven by the recipe. There is no skin texture yet
+   * (Phase 4), so this is a single tinted color rather than a photoreal
+   * material, but it is a real function of skin.tone/tint/roughness rather
+   * than a hardcoded placeholder.
    */
-  private applySkinPlaceholder(): void {
-    if (!this.avatar || !this.scene) return;
-    const material = new PBRMetallicRoughnessMaterial("skinPlaceholder", this.scene);
-    material.baseColor = new Color3(0.76, 0.6, 0.52);
-    material.metallic = 0;
-    material.roughness = 0.75;
-    this.avatar.mesh.material = material;
+  private applySkin(recipe: CharacterRecipe): void {
+    if (!this.skinMaterial) return;
+    const { r, g, b } = computeSkinColor(recipe.skin);
+    this.skinMaterial.baseColor = new Color3(r, g, b);
+    this.skinMaterial.roughness = recipe.skin.roughness;
   }
 
   apply(recipe: CharacterRecipe): SolveResult | null {
     if (!this.avatar) return null;
+    this.applySkin(recipe);
     return applyRecipe(this.avatar, recipe);
   }
 
@@ -127,6 +132,24 @@ export class AvatarViewer {
     return this.engine ? Math.round(this.engine.getFps()) : 0;
   }
 
+  /**
+   * Bakes the current pose into a standalone GLB and triggers a download.
+   *
+   * This is the "export" path referenced in the README: characters are
+   * transmitted as a ~1 KB recipe at runtime, but a self-contained GLB is
+   * useful for importing into another engine or sharing a one-off model.
+   * Uses GLTF2Export.GLBAsync directly rather than shipping a helper function
+   * on the class, since it needs no state beyond the live scene.
+   */
+  async exportGlb(filename: string): Promise<void> {
+    if (!this.scene) throw new Error("Viewer not initialized");
+    const { GLTF2Export } = await import("@babylonjs/serializers");
+    const glb = await GLTF2Export.GLBAsync(this.scene, filename, {
+      shouldExportNode: (node) => node.name !== "ground",
+    });
+    glb.downloadFiles();
+  }
+
   dispose(): void {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
@@ -137,5 +160,6 @@ export class AvatarViewer {
     this.scene = null;
     this.camera = null;
     this.avatar = null;
+    this.skinMaterial = null;
   }
 }

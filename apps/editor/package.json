@@ -12,6 +12,7 @@
   "dependencies": {
     "@babylonjs/core": "9.19.0",
     "@babylonjs/loaders": "9.19.0",
+    "@babylonjs/serializers": "9.19.0",
     "@tpb/avatar-runtime": "workspace:*",
     "@tpb/recipe": "workspace:*",
     "react": "19.2.8",

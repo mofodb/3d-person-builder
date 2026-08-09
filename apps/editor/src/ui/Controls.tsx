@@ -18,6 +18,7 @@ import type { SolveResult } from "@tpb/avatar-runtime";
 
 import { useCharacter } from "../state/useCharacter.ts";
 import { MeasurementField } from "./MeasurementField.tsx";
+import { SaveLoad } from "./SaveLoad.tsx";
 import { Slider } from "./Slider.tsx";
 
 const describeMuscle = (value: number): string => {
@@ -39,16 +40,22 @@ const describeBodyFat = (percent: number, gender: number): string => {
   return "obese";
 };
 
-export function Controls({ solve }: { solve: SolveResult | null }) {
+export interface ControlsProps {
+  solve: SolveResult | null;
+  onExportGlb: () => Promise<void>;
+}
+
+export function Controls({ solve, onExportGlb }: ControlsProps) {
   const recipe = useCharacter((s) => s.recipe);
   const units = useCharacter((s) => s.units);
   const setUnits = useCharacter((s) => s.setUnits);
   const patchBody = useCharacter((s) => s.patchBody);
+  const patchSkin = useCharacter((s) => s.patchSkin);
   const setAncestry = useCharacter((s) => s.setAncestry);
   const setMuscularity = useCharacter((s) => s.setMuscularity);
   const shape = useCharacter((s) => s.shape)();
 
-  const { body } = recipe;
+  const { body, skin } = recipe;
 
   const formatHeightValue = useCallback((cm: number) => formatHeight(cm, units), [units]);
   const parseHeightValue = useCallback((text: string) => parseHeightToCm(text, units), [units]);
@@ -167,6 +174,34 @@ export function Controls({ solve }: { solve: SolveResult | null }) {
       </section>
 
       <section>
+        <h2>Skin</h2>
+        <Slider
+          label="Tone"
+          value={skin.tone}
+          ends={["lightest", "darkest"]}
+          onChange={(tone) => patchSkin({ tone })}
+        />
+        <label className="field">
+          <span className="field-label">Tint</span>
+          <div className="field-row">
+            <input
+              type="color"
+              className="color-input"
+              value={skin.tint}
+              onChange={(event) => patchSkin({ tint: event.target.value })}
+            />
+            <span className="field-hint">multiplies the tone above; white = no tint</span>
+          </div>
+        </label>
+        <Slider
+          label="Roughness"
+          value={skin.roughness}
+          ends={["glossy", "matte"]}
+          onChange={(roughness) => patchSkin({ roughness })}
+        />
+      </section>
+
+      <section>
         <h2>Facial structure</h2>
         <p className="note">
           Blend weights are normalized, so raising one lowers the others proportionally.
@@ -218,6 +253,8 @@ export function Controls({ solve }: { solve: SolveResult | null }) {
           via FFMI, so the numbers can never contradict each other.
         </p>
       </section>
+
+      <SaveLoad onExportGlb={onExportGlb} />
     </div>
   );
 }

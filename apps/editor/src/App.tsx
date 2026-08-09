@@ -4,6 +4,7 @@ import type { SolveResult } from "@tpb/avatar-runtime";
 
 import { useCharacter } from "./state/useCharacter.ts";
 import { Controls } from "./ui/Controls.tsx";
+import { slug } from "./util/slug.ts";
 import { AvatarViewer } from "./viewer/AvatarViewer.ts";
 
 type Status =
@@ -62,7 +63,14 @@ export function App() {
   return (
     <div className="app">
       <aside className="panel">
-        <Controls solve={solve} />
+        <Controls
+          solve={solve}
+          onExportGlb={() => {
+            const viewer = viewerRef.current;
+            if (!viewer) return Promise.resolve();
+            return viewer.exportGlb(slug(recipe.name));
+          }}
+        />
       </aside>
 
       <main className="stage">

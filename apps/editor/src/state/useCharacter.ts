@@ -17,6 +17,7 @@ interface CharacterStore {
 
   setUnits: (units: UnitSystem) => void;
   patchBody: (patch: Partial<CharacterRecipe["body"]>) => void;
+  patchSkin: (patch: Partial<CharacterRecipe["skin"]>) => void;
   setAncestry: (patch: Partial<Ancestry>) => void;
   setName: (name: string) => void;
   reset: () => void;
@@ -39,6 +40,9 @@ export const useCharacter = create<CharacterStore>((set, get) => ({
 
   patchBody: (patch) =>
     set((state) => ({ recipe: { ...state.recipe, body: { ...state.recipe.body, ...patch } } })),
+
+  patchSkin: (patch) =>
+    set((state) => ({ recipe: { ...state.recipe, skin: { ...state.recipe.skin, ...patch } } })),
 
   setAncestry: (patch) =>
     set((state) => ({
