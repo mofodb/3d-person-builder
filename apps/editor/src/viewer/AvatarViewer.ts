@@ -11,7 +11,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 // Side-effect import: registers the glTF loader with SceneLoader.
 import "@babylonjs/loaders/glTF/2.0/index.js";
 
-import { applyRecipe, loadAvatar } from "@tpb/avatar-runtime/babylon";
+import { applyRecipe, loadAvatar, playAnimation } from "@tpb/avatar-runtime/babylon";
 import type { LoadedAvatar } from "@tpb/avatar-runtime/babylon";
 import type { SolveResult } from "@tpb/avatar-runtime";
 import { computeSkinColor } from "@tpb/recipe";
@@ -118,6 +118,14 @@ export class AvatarViewer {
     const metres = heightCm / 100;
     this.camera.setTarget(new Vector3(0, metres * 0.92, 0));
     this.camera.radius = metres * 0.45;
+  }
+
+  get animationNames(): string[] {
+    return this.avatar ? [...this.avatar.animations.keys()] : [];
+  }
+
+  playAnimation(name: string): void {
+    if (this.avatar) playAnimation(this.avatar, name);
   }
 
   get triangleCount(): number {

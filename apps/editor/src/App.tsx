@@ -9,7 +9,7 @@ import { AvatarViewer } from "./viewer/AvatarViewer.ts";
 
 type Status =
   | { kind: "loading" }
-  | { kind: "ready"; triangles: number; bones: number }
+  | { kind: "ready"; triangles: number; bones: number; animations: string[] }
   | { kind: "error"; message: string };
 
 export function App() {
@@ -33,9 +33,16 @@ export function App() {
       .init(canvas)
       .then(() => {
         if (cancelled) return;
-        setStatus({ kind: "ready", triangles: viewer.triangleCount, bones: viewer.boneCount });
+        setStatus({
+          kind: "ready",
+          triangles: viewer.triangleCount,
+          bones: viewer.boneCount,
+          animations: viewer.animationNames,
+        });
         viewer.frameBody(useCharacter.getState().recipe.body.heightCm);
         setSolve(viewer.apply(useCharacter.getState().recipe));
+        // Idle by default when it exists, since a static A-pose reads as broken.
+        if (viewer.animationNames.includes("Idle")) viewer.playAnimation("Idle");
       })
       .catch((error: unknown) => {
         if (cancelled) return;
@@ -100,6 +107,11 @@ export function App() {
               <button type="button" onClick={() => viewerRef.current?.frameHead(recipe.body.heightCm)}>
                 Head
               </button>
+              {status.animations.map((name) => (
+                <button key={name} type="button" onClick={() => viewerRef.current?.playAnimation(name)}>
+                  {name}
+                </button>
+              ))}
             </div>
           </div>
         ) : null}

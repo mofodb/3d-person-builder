@@ -14,6 +14,10 @@ assets/dist/
 *.ktx2
 *.blend1
 
+# Mixamo downloads - free to use in-project, but redistributing the raw files
+# is outside Mixamo's license terms. Never commit, especially to a public repo.
+assets/source/mixamo/
+
 # Python
 __pycache__/
 *.py[cod]

@@ -1,6 +1,7 @@
 import { ImportMeshAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
+import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Skeleton } from "@babylonjs/core/Bones/skeleton.js";
@@ -30,6 +31,8 @@ export interface LoadedAvatar {
   /** Morph target name -> index into the MorphTargetManager. */
   readonly morphIndex: ReadonlyMap<string, number>;
   readonly allMeshes: readonly AbstractMesh[];
+  /** Animation clip name (e.g. "Idle", "Walking") -> playable group. */
+  readonly animations: ReadonlyMap<string, AnimationGroup>;
 }
 
 export interface LoadAvatarOptions {
@@ -98,13 +101,39 @@ export async function loadAvatar(options: LoadAvatarOptions): Promise<LoadedAvat
     );
   }
 
+  // ImportMeshAsync loads animation groups onto the scene but does not return
+  // them, so they are recovered by name against what the manifest says the GLB
+  // should contain, rather than trusting every group already in the scene
+  // (which would break once a second avatar is ever loaded).
+  const animations = new Map<string, AnimationGroup>();
+  for (const clip of manifest.animations) {
+    const group = scene.getAnimationGroupByName(clip.name);
+    if (!group) {
+      throw new Error(
+        `Manifest lists animation "${clip.name}" absent from the mesh. ` +
+          "The GLB and manifest are out of sync; rerun the asset pipeline.",
+      );
+    }
+    group.stop();
+    animations.set(clip.name, group);
+  }
+
   return {
     mesh,
     skeleton: result.skeletons[0] ?? null,
     manifest,
     morphIndex,
     allMeshes: result.meshes,
+    animations,
   };
+}
+
+/** Plays one clip looped, stopping any others so exactly one is ever active. */
+export function playAnimation(avatar: LoadedAvatar, name: string): void {
+  for (const [clipName, group] of avatar.animations) {
+    if (clipName === name) group.start(true);
+    else group.stop();
+  }
 }
 
 /** Applies a recipe to a loaded avatar, returning what the solver decided. */

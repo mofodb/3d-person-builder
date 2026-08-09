@@ -21,6 +21,11 @@ and the names already match.
    30, Keyframe Reduction = none.
 5. Save the file into `assets/source/mixamo/`, named after the animation, e.g.
    `assets/source/mixamo/idle.fbx`, `assets/source/mixamo/walk.fbx`.
+   This folder is gitignored: Mixamo's license covers using the animation in
+   your project, but not redistributing the raw FBX file itself, so it must
+   never be committed (especially to a public repo). The merged result lives
+   only in the exported GLB, which is also gitignored and rebuilt by anyone
+   who needs it.
 6. Run: blender --background --python pipeline/blender/add_animations.py
 
 --------------------------------------------------------------------------------
@@ -30,6 +35,7 @@ Run:
 """
 
 import os
+import re
 import sys
 
 import bpy
@@ -42,6 +48,27 @@ ANIM_SOURCE_DIR = os.path.join(bb.REPO_ROOT, "assets", "source", "mixamo")
 
 def find_new_objects(before: set):
     return [obj for obj in bpy.data.objects if obj not in before]
+
+
+# Mixamo increments this per download session to avoid bone-name collisions
+# when several characters are combined in one scene (mixamorig:, mixamorig1:,
+# mixamorig10:, ...). Our rig always uses the un-numbered form, so any numbered
+# variant is normalized back to it before the action is attached.
+_MIXAMO_NAMESPACE = re.compile(r"mixamorig\d*:")
+
+
+def normalize_mixamo_namespace(action) -> int:
+    """Rewrites fcurve data paths to use the un-numbered `mixamorig:` namespace.
+
+    Returns how many paths were changed, purely so the caller can log it.
+    """
+    changed = 0
+    for fcurve in action.fcurves:
+        normalized = _MIXAMO_NAMESPACE.sub("mixamorig:", fcurve.data_path)
+        if normalized != fcurve.data_path:
+            fcurve.data_path = normalized
+            changed += 1
+    return changed
 
 
 def import_mixamo_action(fbx_path: str, clip_name: str):
@@ -63,6 +90,10 @@ def import_mixamo_action(fbx_path: str, clip_name: str):
     action = armature.animation_data.action
     action.name = clip_name
     action.use_fake_user = True
+
+    renamed = normalize_mixamo_namespace(action)
+    if renamed:
+        print(f"ANIM normalized {renamed} fcurve paths to the 'mixamorig:' namespace")
 
     for obj in imported:
         bpy.data.objects.remove(obj, do_unlink=True)

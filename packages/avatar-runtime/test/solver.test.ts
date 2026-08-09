@@ -31,6 +31,18 @@ test("the generated manifest is well formed", () => {
   assert.ok(manifest.neutralHeightCm > 100 && manifest.neutralHeightCm < 250);
 });
 
+test("merged animations, if present, have full bone coverage", () => {
+  // add_animations.py is a separate, optional pipeline stage -- a plain
+  // build_basemesh.py run legitimately leaves this empty, so this only
+  // asserts something when animations have actually been merged.
+  for (const clip of manifest.animations) {
+    assert.ok(clip.name.length > 0);
+    if (clip.coverage !== undefined) {
+      assert.equal(clip.coverage, 1, `${clip.name} coverage was ${clip.coverage}`);
+    }
+  }
+});
+
 test("every morph in the manifest gets a weight", () => {
   const { weights } = solveMorphWeights(createDefaultRecipe(), manifest);
   for (const morph of manifest.morphs) {

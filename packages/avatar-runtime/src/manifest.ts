@@ -25,6 +25,13 @@ export const MorphInfoSchema = z.object({
   height_delta_cm: z.number(),
 });
 
+export const AnimationInfoSchema = z.object({
+  /** Clip name, matching the glTF animation name exactly. */
+  name: z.string(),
+  /** Bone-name coverage against our rig at merge time; see add_animations.py. */
+  coverage: z.number().min(0).max(1).optional(),
+});
+
 export const BaseMeshManifestSchema = z.object({
   rig: z.object({ name: z.string(), bones: z.number().int().positive() }),
   mesh: z.object({
@@ -40,9 +47,12 @@ export const BaseMeshManifestSchema = z.object({
     minYears: z.number(),
     maxYears: z.number(),
   }),
+  /** Empty until pipeline/blender/add_animations.py has been run. */
+  animations: z.array(AnimationInfoSchema).default([]),
 });
 
 export type MorphInfo = z.infer<typeof MorphInfoSchema>;
+export type AnimationInfo = z.infer<typeof AnimationInfoSchema>;
 export type BaseMeshManifest = z.infer<typeof BaseMeshManifestSchema>;
 
 export function parseManifest(input: unknown): BaseMeshManifest {
