@@ -18,6 +18,10 @@ assets/dist/
 # is outside Mixamo's license terms. Never commit, especially to a public repo.
 assets/source/mixamo/
 
+# Downloaded MakeHuman Community asset packs (CC0, but large, and rebuildable
+# by rerunning pipeline/blender/list_clothing_pack.py against a fresh download).
+.cache/
+
 # Python
 __pycache__/
 *.py[cod]

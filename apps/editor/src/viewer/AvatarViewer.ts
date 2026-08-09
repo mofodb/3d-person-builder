@@ -11,14 +11,25 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 // Side-effect import: registers the glTF loader with SceneLoader.
 import "@babylonjs/loaders/glTF/2.0/index.js";
 
-import { applyRecipe, loadAvatar, playAnimation } from "@tpb/avatar-runtime/babylon";
-import type { LoadedAvatar } from "@tpb/avatar-runtime/babylon";
-import type { SolveResult } from "@tpb/avatar-runtime";
+import {
+  applyGarmentWeights,
+  applyRecipe,
+  loadAvatar,
+  loadGarment,
+  playAnimation,
+} from "@tpb/avatar-runtime/babylon";
+import type { LoadedAvatar, LoadedGarment } from "@tpb/avatar-runtime/babylon";
+import type { GarmentSlot, SolveResult } from "@tpb/avatar-runtime";
 import { computeSkinColor } from "@tpb/recipe";
 import type { CharacterRecipe } from "@tpb/recipe";
 
 const MESH_URL = "/generated/basemesh.glb";
 const MANIFEST_URL = "/generated/basemesh.manifest.json";
+
+const garmentUrls = (slot: GarmentSlot, name: string) => ({
+  meshUrl: `/generated/clothing.${slot}.${name}.glb`,
+  manifestUrl: `/generated/clothing.${slot}.${name}.manifest.json`,
+});
 
 /**
  * Owns the Babylon scene. Framework-free on purpose: React drives it through a
@@ -32,6 +43,8 @@ export class AvatarViewer {
   private avatar: LoadedAvatar | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private skinMaterial: PBRMetallicRoughnessMaterial | null = null;
+  private lastSolve: SolveResult | null = null;
+  private garments = new Map<GarmentSlot, LoadedGarment>();
 
   async init(canvas: HTMLCanvasElement): Promise<void> {
     const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
@@ -101,7 +114,35 @@ export class AvatarViewer {
   apply(recipe: CharacterRecipe): SolveResult | null {
     if (!this.avatar) return null;
     this.applySkin(recipe);
-    return applyRecipe(this.avatar, recipe);
+    const solved = applyRecipe(this.avatar, recipe);
+    this.lastSolve = solved;
+    // Garment morph target names are identical to the body's by construction
+    // (see build_clothing.py), so the body's own solved weights apply directly
+    // -- no separate solve, and no way for a garment to disagree with the body
+    // it is fitted to.
+    for (const garment of this.garments.values()) applyGarmentWeights(garment, solved.weights);
+    return solved;
+  }
+
+  /** Loads a garment into a slot, replacing whatever was worn there. */
+  async equip(slot: GarmentSlot, name: string): Promise<void> {
+    if (!this.scene || !this.avatar) throw new Error("Viewer not initialized");
+    this.unequip(slot);
+
+    const garment = await loadGarment({ ...garmentUrls(slot, name), scene: this.scene, avatar: this.avatar });
+    if (this.lastSolve) applyGarmentWeights(garment, this.lastSolve.weights);
+    this.garments.set(slot, garment);
+  }
+
+  unequip(slot: GarmentSlot): void {
+    const existing = this.garments.get(slot);
+    if (!existing) return;
+    existing.mesh.dispose(false, true);
+    this.garments.delete(slot);
+  }
+
+  isEquipped(slot: GarmentSlot): boolean {
+    return this.garments.has(slot);
   }
 
   /** Points the camera at the whole body, given its real height. */
@@ -169,5 +210,7 @@ export class AvatarViewer {
     this.camera = null;
     this.avatar = null;
     this.skinMaterial = null;
+    this.lastSolve = null;
+    this.garments.clear();
   }
 }

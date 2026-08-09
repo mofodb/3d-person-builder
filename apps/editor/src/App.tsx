@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { SolveResult } from "@tpb/avatar-runtime";
+import type { GarmentSlot, SolveResult } from "@tpb/avatar-runtime";
 
 import { useCharacter } from "./state/useCharacter.ts";
 import { Controls } from "./ui/Controls.tsx";
@@ -17,6 +17,9 @@ export function App() {
   const viewerRef = useRef<AvatarViewer | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [solve, setSolve] = useState<SolveResult | null>(null);
+  const [equipped, setEquipped] = useState<ReadonlySet<GarmentSlot>>(new Set());
+  const [pendingSlots, setPendingSlots] = useState<ReadonlySet<GarmentSlot>>(new Set());
+  const [outfitError, setOutfitError] = useState<string | null>(null);
 
   const recipe = useCharacter((state) => state.recipe);
 
@@ -67,6 +70,40 @@ export function App() {
     if (result) setSolve(result);
   }, [recipe, status.kind]);
 
+  const toggleGarment = (slot: GarmentSlot, name: string) => {
+    const viewer = viewerRef.current;
+    if (!viewer || pendingSlots.has(slot)) return;
+
+    setOutfitError(null);
+    setPendingSlots((prev) => new Set(prev).add(slot));
+
+    const isOn = equipped.has(slot);
+    const settle = () => setPendingSlots((prev) => {
+      const next = new Set(prev);
+      next.delete(slot);
+      return next;
+    });
+
+    if (isOn) {
+      viewer.unequip(slot);
+      setEquipped((prev) => {
+        const next = new Set(prev);
+        next.delete(slot);
+        return next;
+      });
+      settle();
+      return;
+    }
+
+    viewer
+      .equip(slot, name)
+      .then(() => setEquipped((prev) => new Set(prev).add(slot)))
+      .catch((error: unknown) => {
+        setOutfitError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(settle);
+  };
+
   return (
     <div className="app">
       <aside className="panel">
@@ -77,6 +114,7 @@ export function App() {
             if (!viewer) return Promise.resolve();
             return viewer.exportGlb(slug(recipe.name));
           }}
+          outfit={{ equipped, pending: pendingSlots, error: outfitError, onToggle: toggleGarment }}
         />
       </aside>
 

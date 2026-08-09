@@ -18,6 +18,8 @@ import type { SolveResult } from "@tpb/avatar-runtime";
 
 import { useCharacter } from "../state/useCharacter.ts";
 import { MeasurementField } from "./MeasurementField.tsx";
+import { Outfit } from "./Outfit.tsx";
+import type { OutfitProps } from "./Outfit.tsx";
 import { SaveLoad } from "./SaveLoad.tsx";
 import { Slider } from "./Slider.tsx";
 
@@ -43,9 +45,10 @@ const describeBodyFat = (percent: number, gender: number): string => {
 export interface ControlsProps {
   solve: SolveResult | null;
   onExportGlb: () => Promise<void>;
+  outfit: OutfitProps;
 }
 
-export function Controls({ solve, onExportGlb }: ControlsProps) {
+export function Controls({ solve, onExportGlb, outfit }: ControlsProps) {
   const recipe = useCharacter((s) => s.recipe);
   const units = useCharacter((s) => s.units);
   const setUnits = useCharacter((s) => s.setUnits);
@@ -253,6 +256,8 @@ export function Controls({ solve, onExportGlb }: ControlsProps) {
           via FFMI, so the numbers can never contradict each other.
         </p>
       </section>
+
+      <Outfit {...outfit} />
 
       <SaveLoad onExportGlb={onExportGlb} />
     </div>
