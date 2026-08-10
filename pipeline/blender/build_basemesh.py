@@ -480,6 +480,18 @@ def build_character() -> tuple:
     print("BUILD adding rig:", RIG_NAME)
     HumanService.add_builtin_rig(base, RIG_NAME, import_weights=True)
     armature = base.parent
+
+    # NOTE: an earlier version of this function swapped in Mixamo's own
+    # skeleton wholesale here, reasoning that it would fix a bone ROTATION
+    # convention mismatch (see add_animations.py's retarget_rotations). That
+    # broke something more fundamental: Mixamo's stock skeleton's bone
+    # POSITIONS are sized for Mixamo's own generic character, not fitted to
+    # this specific mesh, so even the REST pose (no animation at all) came out
+    # with hands stretched to ~50 cm. MPFB's rig.mixamo.json is correctly
+    # fitted to our mesh; only its bone ROLL differs from Mixamo's, which is
+    # fixed at the animation level instead (retargeting rotation values into
+    # this rig's existing, position-correct bone frames) rather than here.
+
     bone_count = len(armature.data.bones) if armature else 0
     print("BUILD bones:", bone_count)
 

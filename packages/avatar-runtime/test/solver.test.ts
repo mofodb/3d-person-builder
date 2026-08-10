@@ -26,7 +26,11 @@ const withBody = (patch: Partial<CharacterRecipe["body"]>): CharacterRecipe => {
 
 test("the generated manifest is well formed", () => {
   assert.equal(manifest.rig.name, "mixamo");
-  assert.equal(manifest.rig.bones, 52);
+  // 52 skinned bones plus Mixamo's own unused leaf/end-effector bones
+  // (HeadTop_End, finger tip markers, ...) kept when we swapped to Mixamo's
+  // real skeleton to fix its bone rest orientations; see swap_to_mixamo_native_skeleton
+  // in build_basemesh.py.
+  assert.ok(manifest.rig.bones >= 52, `expected at least 52 bones, got ${manifest.rig.bones}`);
   assert.ok(manifest.morphs.length >= 19);
   assert.ok(manifest.neutralHeightCm > 100 && manifest.neutralHeightCm < 250);
 });
