@@ -1,7 +1,10 @@
 import { ImportMeshAsync } from "@babylonjs/core/Loading/sceneLoader.js";
+import { Space } from "@babylonjs/core/Maths/math.axis.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup.js";
+import type { Bone } from "@babylonjs/core/Bones/bone.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Skeleton } from "@babylonjs/core/Bones/skeleton.js";
@@ -35,6 +38,14 @@ export interface LoadedAvatar {
   readonly allMeshes: readonly AbstractMesh[];
   /** Animation clip name (e.g. "Idle", "Walking") -> playable group. */
   readonly animations: ReadonlyMap<string, AnimationGroup>;
+  /**
+   * Each corrected bone's ORIGINAL local position, captured once at load time.
+   * Corrections are always computed as `original + weightedDeltaSum`, never
+   * incrementally from whatever the bone's position currently is -- bones get
+   * repositioned every time the recipe changes, so "currently" would already
+   * be a previously-corrected value and compound.
+   */
+  readonly boneRestPositions: ReadonlyMap<string, Vector3>;
 }
 
 export interface LoadAvatarOptions {
@@ -43,6 +54,32 @@ export interface LoadAvatarOptions {
   /** URL of the manifest emitted alongside it. */
   readonly manifestUrl: string;
   readonly scene: Scene;
+}
+
+/**
+ * Removes every "position"-animating track from a loaded clip except the
+ * Hips bone's.
+ *
+ * `pipeline/blender/add_animations.py`'s strip_redundant_location_curves()
+ * tries to remove these on the Blender side, but Blender's glTF exporter
+ * bakes a translation channel for every animated bone via NLA sampling
+ * regardless of whether the source action has a location fcurve for it, so
+ * the no-op channels reappear in the exported GLB anyway. They must be
+ * removed here instead: `applyBoneCorrections()` repositions non-Hips bones
+ * once per recipe change, and a keyframed property always overrides a value
+ * set before playback starts, so without this an AnimationGroup would reset
+ * every correction back to the uncorrected rest position on the next frame.
+ */
+function stripNonHipsPositionTracks(group: AnimationGroup): number {
+  let removed = 0;
+  for (const targeted of [...group.targetedAnimations]) {
+    if (targeted.animation.targetProperty !== "position") continue;
+    const target = targeted.target as Bone | undefined;
+    if (target?.name?.endsWith(":Hips")) continue;
+    group.removeTargetedAnimation(targeted.animation);
+    removed++;
+  }
+  return removed;
 }
 
 function configureMorphs(mesh: Mesh): ReadonlyMap<string, number> {
@@ -117,16 +154,27 @@ export async function loadAvatar(options: LoadAvatarOptions): Promise<LoadedAvat
       );
     }
     group.stop();
+    stripNonHipsPositionTracks(group);
     animations.set(clip.name, group);
+  }
+
+  const skeleton = result.skeletons[0] ?? null;
+  const boneRestPositions = new Map<string, Vector3>();
+  if (skeleton) {
+    for (const boneName of Object.keys(manifest.boneCorrections)) {
+      const bone = skeleton.bones.find((candidate) => candidate.name === boneName);
+      if (bone) boneRestPositions.set(boneName, bone.getPosition(Space.LOCAL).clone());
+    }
   }
 
   return {
     mesh,
-    skeleton: result.skeletons[0] ?? null,
+    skeleton,
     manifest,
     morphIndex,
     allMeshes: result.meshes,
     animations,
+    boneRestPositions,
   };
 }
 
@@ -135,6 +183,50 @@ export function playAnimation(avatar: LoadedAvatar, name: string): void {
   for (const [clipName, group] of avatar.animations) {
     if (clipName === name) group.start(true);
     else group.stop();
+  }
+}
+
+/**
+ * Repositions each corrected bone to track the current recipe's actual body
+ * proportions, closing the gap described on `LoadedAvatar.boneRestPositions`
+ * and `BoneCorrectionsSchema`: body-shape morphs reshape the mesh but never
+ * move the skeleton that was bound to it at average proportions, which is
+ * invisible at rest and increasingly wrong on posed (animated) limbs the
+ * further a recipe's height/build sits from that average.
+ *
+ * Must run AFTER `pipeline/blender/add_animations.py`'s
+ * strip_redundant_location_curves has removed the non-Hips bones' no-op
+ * location animation channels: otherwise Babylon's AnimationGroup would
+ * silently reset these positions to their original (uncorrected) values on
+ * every rendered frame, since a keyframed property always overrides a value
+ * set before playback started.
+ */
+function applyBoneCorrections(avatar: LoadedAvatar, weights: Readonly<Record<string, number>>): void {
+  if (!avatar.skeleton) return;
+
+  for (const [boneName, deltasByMorph] of Object.entries(avatar.manifest.boneCorrections)) {
+    const rest = avatar.boneRestPositions.get(boneName);
+    if (!rest) continue;
+    const bone: Bone | undefined = avatar.skeleton.bones.find((b) => b.name === boneName);
+    if (!bone) continue;
+
+    let dx = 0;
+    let dy = 0;
+    let dz = 0;
+    for (const [morphName, [ddxCm, ddyCm, ddzCm]] of Object.entries(deltasByMorph)) {
+      const weight = weights[morphName];
+      if (!weight) continue;
+      dx += weight * ddxCm!;
+      dy += weight * ddyCm!;
+      dz += weight * ddzCm!;
+    }
+
+    // Deltas are authored in cm (consistent with the rest of the manifest);
+    // the scene, like the rest position read from the loaded GLB, is in metres.
+    bone.setPosition(
+      new Vector3(rest.x + dx / 100, rest.y + dy / 100, rest.z + dz / 100),
+      Space.LOCAL,
+    );
   }
 }
 
@@ -156,6 +248,7 @@ function applyMorphWeights(
 export function applyRecipe(avatar: LoadedAvatar, recipe: CharacterRecipe): SolveResult {
   const solved = solveMorphWeights(recipe, avatar.manifest);
   applyMorphWeights(avatar.mesh, avatar.morphIndex, solved.weights);
+  applyBoneCorrections(avatar, solved.weights);
   return solved;
 }
 

@@ -259,6 +259,48 @@ def import_mixamo_action(fbx_path: str, clip_name: str, target_armature):
     return action
 
 
+def strip_redundant_location_curves(action, keep_suffix: str = ":Hips") -> int:
+    """Removes every bone's `.location` fcurves except Hips's, from the ACTION.
+
+    Blender's FBX importer bakes a location keyframe for every bone in the
+    rig, even ones the mocap never actually moved -- confirmed empirically
+    (`worst=0.0000` for every sampled non-Hips bone). Only Hips carries genuine
+    positional animation (root motion).
+
+    NOTE: this alone does not stop the no-op channels from reappearing in the
+    exported GLB. `export_nla_strips=True` (needed to export Idle and Walking
+    as separate named clips) makes Blender's glTF exporter SAMPLE the
+    evaluated pose every frame rather than serialize each action's fcurves
+    directly, and it samples position/rotation/scale uniformly for every
+    animated bone regardless of what the source action contains. The actual
+    fix is stripping these tracks again on the Babylon side, in
+    stripNonHipsPositionTracks() in babylon.ts -- see the comment there for
+    why it matters (`applyBoneCorrections()`). This function still earns its
+    keep as validation: it is where an unexpectedly-real motion curve would be
+    caught and raised, and it keeps the .blend's own action data honest for
+    anyone opening it directly.
+    """
+    to_remove = []
+    for fcurve in action.fcurves:
+        if not fcurve.data_path.endswith(".location"):
+            continue
+        bone_name = fcurve.data_path.split('"')[1]
+        if bone_name.endswith(keep_suffix):
+            continue
+        worst = max((abs(kp.co.y) for kp in fcurve.keyframe_points), default=0.0)
+        if worst > 0.001:  # 1 mm: real motion, not exporter noise.
+            raise RuntimeError(
+                f"{bone_name}: expected a no-op .location curve but found "
+                f"{worst:.4f} m of real motion. Stripping it would be wrong -- "
+                "investigate before proceeding."
+            )
+        to_remove.append(fcurve)
+
+    for fcurve in to_remove:
+        action.fcurves.remove(fcurve)
+    return len(to_remove)
+
+
 def validate_bone_coverage(armature_obj, action) -> dict:
     """Checks how many of the action's bone curves actually match our rig.
 
@@ -452,6 +494,9 @@ def main():
 
         rotmode_changed = match_rotation_mode(armature, action)
         print(f"ANIM {clip_name} switched {rotmode_changed} bone(s) to quaternion rotation mode")
+
+        stripped = strip_redundant_location_curves(action)
+        print(f"ANIM {clip_name} stripped {stripped} no-op location curve(s), keeping Hips's")
 
         attach_animation(armature, action, clip_name)
         animations.append({"name": clip_name, **coverage})

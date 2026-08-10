@@ -393,6 +393,55 @@ def validate_shape_keys(obj, extracted: list) -> None:
         )
 
 
+# Below this, a bone's LOCAL position (its offset from its parent, matching
+# Babylon/glTF joint `translation` semantics exactly) is treated as unchanged
+# by a morph. Keeps the manifest from carrying thousands of near-zero entries.
+BONE_DELTA_EPSILON_CM = 0.05
+
+
+def bone_local_offset(bone) -> tuple:
+    """A bone's position relative to its parent's local frame.
+
+    For a straight, parent-connected chain (Blender's normal FK convention,
+    which this rig uses) this is verified to equal (0, parent.length, 0): the
+    child sits at the parent's tail, offset along the parent's own local Y
+    axis by exactly the parent's length. That is exactly the quantity that
+    needs correcting when a body-shape morph makes a limb longer or shorter --
+    the mesh already reflects the new length via its shape key, but nothing
+    tells the SKELETON's joints to move further apart, which is what actually
+    causes rotated (posed) limbs to distort at extreme heights: the pivot the
+    rotation happens around no longer matches where the flesh actually is.
+    """
+    if bone.parent is None:
+        return tuple(bone.head_local)
+    return tuple(bone.parent.matrix_local.inverted() @ bone.head_local)
+
+
+def capture_bone_offsets(macros: dict, detail_targets: list) -> dict:
+    """Builds a throwaway human + rig purely to measure where this body
+    shape's joints should sit. Skin weights are not needed (`import_weights`
+    is left at its wasteful default off) since only bone rest positions are
+    read before the object is discarded.
+    """
+    HumanService = import_mpfb("services.humanservice").HumanService
+    obj = build_variant(macros, detail_targets)
+    HumanService.add_builtin_rig(obj, RIG_NAME, import_weights=False)
+    armature = obj.parent
+    offsets = {bone.name: bone_local_offset(bone) for bone in armature.data.bones}
+
+    mesh = obj.data
+    bpy.data.objects.remove(obj, do_unlink=True)
+    if mesh.users == 0:
+        bpy.data.meshes.remove(mesh)
+    if armature is not None:
+        armature_data = armature.data
+        bpy.data.objects.remove(armature, do_unlink=True)
+        if armature_data.users == 0:
+            bpy.data.armatures.remove(armature_data)
+
+    return offsets
+
+
 def build_character() -> tuple:
     """Builds the rigged, morphed base mesh and its manifest, stopping short of
     export. Factored out of `main()` so other scripts (animation merging) can
@@ -423,11 +472,31 @@ def build_character() -> tuple:
 
     neutral_height_cm = measure_height_cm(neutral, body_indices)
 
+    print("BUILD capturing neutral bone offsets")
+    neutral_bone_offsets = capture_bone_offsets(neutral_macros(), [])
+    # bone_name -> {morph_name: [dx, dy, dz]} in cm, skipping Hips (which carries
+    # genuine positional animation, so is corrected differently -- or not at
+    # all, for now -- rather than via this one-time-per-recipe mechanism) and
+    # skipping deltas too small to matter.
+    bone_corrections: dict = {}
+
     extracted = []
     for name, macro_axis, macro_value, overrides, detail_targets in MORPH_BASIS:
         macros = neutral_macros()
         for key, value in overrides.items():
             macros[key] = value
+
+        variant_bone_offsets = capture_bone_offsets(macros, detail_targets)
+        for bone_name, neutral_offset in neutral_bone_offsets.items():
+            if bone_name.endswith(":Hips"):
+                continue
+            variant_offset = variant_bone_offsets.get(bone_name)
+            if variant_offset is None:
+                continue
+            delta_cm = [(variant_offset[i] - neutral_offset[i]) * 100 for i in range(3)]
+            if max(abs(d) for d in delta_cm) < BONE_DELTA_EPSILON_CM:
+                continue
+            bone_corrections.setdefault(bone_name, {})[name] = [round(d, 4) for d in delta_cm]
 
         coords = capture_variant(macros, detail_targets)
         if len(coords) != vertex_count:
@@ -532,7 +601,9 @@ def build_character() -> tuple:
             "dialAt13": round(AGE_DIAL_AT_13, 6),
         },
         "animations": [],
+        "boneCorrections": bone_corrections,
     }
+    print(f"BUILD bone corrections: {len(bone_corrections)} bone(s) affected by at least one morph")
     return base, manifest
 
 

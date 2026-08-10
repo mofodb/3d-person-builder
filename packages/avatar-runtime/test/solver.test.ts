@@ -26,13 +26,40 @@ const withBody = (patch: Partial<CharacterRecipe["body"]>): CharacterRecipe => {
 
 test("the generated manifest is well formed", () => {
   assert.equal(manifest.rig.name, "mixamo");
-  // 52 skinned bones plus Mixamo's own unused leaf/end-effector bones
-  // (HeadTop_End, finger tip markers, ...) kept when we swapped to Mixamo's
-  // real skeleton to fix its bone rest orientations; see swap_to_mixamo_native_skeleton
-  // in build_basemesh.py.
-  assert.ok(manifest.rig.bones >= 52, `expected at least 52 bones, got ${manifest.rig.bones}`);
+  assert.equal(manifest.rig.bones, 52);
   assert.ok(manifest.morphs.length >= 19);
   assert.ok(manifest.neutralHeightCm > 100 && manifest.neutralHeightCm < 250);
+});
+
+test("bone corrections cover most of the rig, excluding Hips", () => {
+  // Hips carries genuine positional animation (root motion) and is corrected
+  // by a different mechanism, so it must never appear here; see
+  // bone_local_offset() in build_basemesh.py and applyBoneCorrections() in
+  // babylon.ts.
+  const boneNames = Object.keys(manifest.boneCorrections);
+  assert.ok(boneNames.length >= 40, `only ${boneNames.length} bones have corrections`);
+  assert.ok(!boneNames.some((name) => name.endsWith(":Hips")));
+});
+
+test("height dominates a limb bone's correction, matching the body's own height response", () => {
+  const forearm = manifest.boneCorrections["mixamorig:LeftForeArm"];
+  assert.ok(forearm, "LeftForeArm should have corrections");
+  const [, tallY] = forearm!["height_tall"]!;
+  const [, shortY] = forearm!["height_short"]!;
+  // A taller body must reach the forearm further out; a shorter one closer in.
+  assert.ok(tallY! > 0, `height_tall should extend the forearm, got ${tallY}`);
+  assert.ok(shortY! < 0, `height_short should shorten the forearm, got ${shortY}`);
+});
+
+test("bone corrections point along the bone's own local axis", () => {
+  // Verifies the parent-relative-offset convention (see bone_local_offset in
+  // build_basemesh.py): for this rig's straight FK chains, a correction should
+  // be concentrated on one axis (Y), not spread arbitrarily across all three.
+  const forearm = manifest.boneCorrections["mixamorig:LeftForeArm"]!;
+  for (const [morphName, [dx, dy, dz]] of Object.entries(forearm)) {
+    const dominant = Math.max(Math.abs(dx!), Math.abs(dy!), Math.abs(dz!));
+    assert.equal(dominant, Math.abs(dy!), `${morphName}: expected Y to dominate, got [${dx},${dy},${dz}]`);
+  }
 });
 
 test("merged animations, if present, have full bone coverage", () => {

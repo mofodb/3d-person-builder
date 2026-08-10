@@ -32,6 +32,28 @@ export const AnimationInfoSchema = z.object({
   coverage: z.number().min(0).max(1).optional(),
 });
 
+/** A bone's local-position shift (relative to its parent), in cm, when one
+ * named morph is fully applied. */
+const boneDeltaCm = () => z.tuple([z.number(), z.number(), z.number()]);
+
+/**
+ * Bone name -> morph name -> position delta.
+ *
+ * Body-shape morphs deform the mesh but never move the skeleton, which was
+ * bound once at average proportions. That mismatch is invisible at rest (no
+ * rotation means no error) but grows with how far a limb's actual length now
+ * differs from the rig's fixed length, and compounds down long chains -- an
+ * extreme height slider value visibly distorts posed (animated) hands and
+ * forearms as a result. These corrections let the runtime reposition each
+ * bone to track the current recipe's actual proportions; see
+ * bone_local_offset() and capture_bone_offsets() in build_basemesh.py for how
+ * they're measured, and applyBoneCorrections() in babylon.ts for how they're
+ * used. Hips is deliberately absent: it carries genuine positional animation
+ * (root motion), which this one-time-per-recipe mechanism does not attempt to
+ * coexist with.
+ */
+export const BoneCorrectionsSchema = z.record(z.string(), z.record(z.string(), boneDeltaCm()));
+
 export const BaseMeshManifestSchema = z.object({
   rig: z.object({ name: z.string(), bones: z.number().int().positive() }),
   mesh: z.object({
@@ -49,10 +71,12 @@ export const BaseMeshManifestSchema = z.object({
   }),
   /** Empty until pipeline/blender/add_animations.py has been run. */
   animations: z.array(AnimationInfoSchema).default([]),
+  boneCorrections: BoneCorrectionsSchema.default({}),
 });
 
 export type MorphInfo = z.infer<typeof MorphInfoSchema>;
 export type AnimationInfo = z.infer<typeof AnimationInfoSchema>;
+export type BoneCorrections = z.infer<typeof BoneCorrectionsSchema>;
 export type BaseMeshManifest = z.infer<typeof BaseMeshManifestSchema>;
 
 export function parseManifest(input: unknown): BaseMeshManifest {
