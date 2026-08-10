@@ -163,7 +163,7 @@ export async function loadAvatar(options: LoadAvatarOptions): Promise<LoadedAvat
   if (skeleton) {
     for (const boneName of Object.keys(manifest.boneCorrections)) {
       const bone = skeleton.bones.find((candidate) => candidate.name === boneName);
-      if (bone) boneRestPositions.set(boneName, bone.getPosition(Space.LOCAL).clone());
+      if (bone) boneRestPositions.set(boneName, positionOf(bone).clone());
     }
   }
 
@@ -184,6 +184,22 @@ export function playAnimation(avatar: LoadedAvatar, name: string): void {
     if (clipName === name) group.start(true);
     else group.stop();
   }
+}
+
+/**
+ * Where a bone's LOCAL position actually lives.
+ *
+ * Babylon's glTF loader links every imported `Bone` to a `TransformNode` (one
+ * per glTF joint node) and glTF animations target that node directly, not the
+ * Bone object -- confirmed the hard way, by writing a headless verification
+ * script: `Bone.setPosition()` silently had NO effect on the actual skinned
+ * result at all, because skinning reads the linked node's position, which
+ * `setPosition` never touched. The linked node's `.position` is already
+ * expressed in the parent's local space, matching `Space.LOCAL` semantics, so
+ * no space conversion is needed once you're looking at the right object.
+ */
+function positionOf(bone: Bone): Vector3 {
+  return bone.getTransformNode()?.position ?? bone.getPosition(Space.LOCAL);
 }
 
 /**
@@ -223,10 +239,10 @@ function applyBoneCorrections(avatar: LoadedAvatar, weights: Readonly<Record<str
 
     // Deltas are authored in cm (consistent with the rest of the manifest);
     // the scene, like the rest position read from the loaded GLB, is in metres.
-    bone.setPosition(
-      new Vector3(rest.x + dx / 100, rest.y + dy / 100, rest.z + dz / 100),
-      Space.LOCAL,
-    );
+    const corrected = new Vector3(rest.x + dx / 100, rest.y + dy / 100, rest.z + dz / 100);
+    const linkedNode = bone.getTransformNode();
+    if (linkedNode) linkedNode.position = corrected;
+    else bone.setPosition(corrected, Space.LOCAL);
   }
 }
 

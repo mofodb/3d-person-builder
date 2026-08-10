@@ -12,7 +12,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/*.test.ts\"",
-    "measure": "node scripts/measure-archetypes.mjs"
+    "measure": "node scripts/measure-archetypes.mjs",
+    "verify-runtime": "node scripts/verify-runtime.mjs"
   },
   "dependencies": {
     "@tpb/recipe": "workspace:*",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@babylonjs/core": "9.19.0",
+    "@babylonjs/loaders": "9.19.0",
     "@types/node": "24.10.1",
     "typescript": "7.0.2"
   }
